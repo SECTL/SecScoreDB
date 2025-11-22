@@ -18,6 +18,7 @@ namespace SSDB
 		
 	public:
 		explicit DataBaseFile(fs::path path);
+		~DataBaseFile();  // 析构函数，确保文件正确关闭
 		DataBaseFile(const DataBaseFile&) = delete;
 		DataBaseFile& operator=(const DataBaseFile&) = delete;
 		DataBaseFile(DataBaseFile&&)  noexcept = default;

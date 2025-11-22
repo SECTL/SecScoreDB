@@ -14,6 +14,8 @@ find_package(cereal CONFIG REQUIRED)
 add_library(SecScoreDB STATIC
         src/FileHelper.cpp
         src/SecScoreDB.cpp
+        src/Schema.hpp
+        src/DynamicFields.hpp
 )
 
 # 设置包含目录 - 确保头文件可以被正确找到
