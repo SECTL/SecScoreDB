@@ -15,6 +15,16 @@ namespace SSDB
         if (!this->File.good())
             throw std::runtime_error("there must be smth wrong with the file");
     }
+    
+    DataBaseFile::~DataBaseFile()
+    {
+        if (this->File.is_open()) {
+            // 刷新缓冲区确保所有数据都被写入
+            this->File.flush();
+            // 关闭文件
+            this->File.close();
+        }
+    }
 
     template <typename T>
     void DataBaseFile::writeObj(const T& obj)
