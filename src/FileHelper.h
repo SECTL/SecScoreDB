@@ -14,13 +14,15 @@ namespace SSDB
 		fs::path filePath;
 		std::fstream File;
 	public:
-		DataBaseFile(fs::path path);
+		explicit DataBaseFile(fs::path path);
 		DataBaseFile(const DataBaseFile&) = delete;
 		DataBaseFile& operator=(const DataBaseFile&) = delete;
-		DataBaseFile(DataBaseFile&&) = default;
-		DataBaseFile& operator=(DataBaseFile&&) = default;
+		DataBaseFile(DataBaseFile&&)  noexcept = default;
+		DataBaseFile& operator=(DataBaseFile&&)  noexcept = default;
 
-		void writeBytes(const void* data, std::size_t len);
-		void readBytes(const void* buf, std::size_t len);
+		template<typename T>
+		void writeObj(const T& obj);
+		template<typename T>
+		bool readNextObj(const T& obj);
 	};
 }
