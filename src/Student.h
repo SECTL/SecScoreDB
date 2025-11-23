@@ -11,52 +11,63 @@
 
 namespace SSDB
 {
-	class Student
-	{
-	private:
-		int id;
-		std::vector<int> GroupBelong;
-		t_metadata metadata;
-	public:
-		// 默认构造函数 (cereal 反序列化需要)
-		Student() : id(0) {}
+    template <typename T>
+    concept MetadataEntity = requires(T t, const std::string& k, const std::string& v)
+    {
+        { t.SetMetadataValue(k, v) };
+        { t.GetMetadataValue(k) } -> std::convertible_to<std::string>;
+    };
 
-		// 构造函数
-		Student(int _id, const std::vector<int>& Group, const t_metadata& meta)
-		{
-			this->id = _id;
-			this->GroupBelong = Group;
-			this->metadata = meta;
-		}
+    class Student
+    {
+    private:
+        int id;
+        std::vector<int> GroupBelong;
+        t_metadata metadata;
 
-		// Getter / Setter for id
-		int GetId() const { return id; }
-		void SetId(int _id) { id = _id; }
+    public:
+        // 默认构造函数 (cereal 反序列化需要)
+        Student() : id(0)
+        {
+        }
 
-		// Getter / Setter for groups
-		const std::vector<int>& GetGroups() const { return GroupBelong; }
-		void SetGroups(const std::vector<int>& groups) { GroupBelong = groups; }
-		void AddGroup(int groupId) { GroupBelong.push_back(groupId); }
+        // 构造函数
+        Student(int _id, const std::vector<int>& Group, const t_metadata& meta)
+        {
+            this->id = _id;
+            this->GroupBelong = Group;
+            this->metadata = meta;
+        }
 
-		// Getter / Setter for metadata
-		const t_metadata& GetMetadata() const { return metadata; }
-		void SetMetadata(const t_metadata& meta) { metadata = meta; }
-		void SetMetadataValue(const std::string& key, const std::string& value) { metadata[key] = value; }
-		std::string GetMetadataValue(const std::string& key) const {
-			auto it = metadata.find(key);
-			return it != metadata.end() ? it->second : std::string();
-		}
+        // Getter / Setter for id
+        int GetId() const { return id; }
+        void SetId(int _id) { id = _id; }
 
-		// cereal 序列化
-		template<class Archive>
-		void serialize(Archive& ar)
-		{
-			ar(
-				CEREAL_NVP(id),
-				CEREAL_NVP(GroupBelong),
-				CEREAL_NVP(metadata)
-			);
-		}
-	};
+        // Getter / Setter for groups
+        const std::vector<int>& GetGroups() const { return GroupBelong; }
+        void SetGroups(const std::vector<int>& groups) { GroupBelong = groups; }
+        void AddGroup(int groupId) { GroupBelong.push_back(groupId); }
+
+        // Getter / Setter for metadata
+        const t_metadata& GetMetadata() const { return metadata; }
+        void SetMetadata(const t_metadata& meta) { metadata = meta; }
+        void SetMetadataValue(const std::string& key, const std::string& value) { metadata[key] = value; }
+
+        std::string GetMetadataValue(const std::string& key) const
+        {
+            auto it = metadata.find(key);
+            return it != metadata.end() ? it->second : std::string();
+        }
+
+        // cereal 序列化
+        template <class Archive>
+        void serialize(Archive& ar)
+        {
+            ar(
+                CEREAL_NVP(id),
+                CEREAL_NVP(GroupBelong),
+                CEREAL_NVP(metadata)
+            );
+        }
+    };
 }
-
