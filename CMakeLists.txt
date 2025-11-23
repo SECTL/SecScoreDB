@@ -44,13 +44,13 @@ file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
         ${PROJECT_SOURCE_DIR}/tests/*.cpp)
 
 if (TEST_SOURCES)
-    add_executable(SecScoreDBApp ${TEST_SOURCES}
+    add_executable(SecScoreDBTest ${TEST_SOURCES}
             tests/main.cpp)
     # 链接到我们刚刚的静态库
-    target_link_libraries(SecScoreDBApp PRIVATE SecScoreDB)
+    target_link_libraries(SecScoreDBTest PRIVATE SecScoreDB)
     # 由于静态库已经 PUBLIC 暴露头文件，这里理论上不需要再次 include
     # 但如果以后 tests 里需要直接访问 src 下的未公开部分，可加：
-    target_include_directories(SecScoreDBApp PRIVATE ${PROJECT_SOURCE_DIR}/src)
+    target_include_directories(SecScoreDBTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
 endif()
 
 # 如果需要链接到可执行文件，应该先定义可执行文件
