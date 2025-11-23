@@ -190,6 +190,8 @@ namespace SSDB
             }
             _max_event_id = (inputId > _max_event_id ? inputId : _max_event_id);
         }
+        // 实际插入事件存储
+        evt.emplace(e.GetId(), std::move(e));
     }
 
     void SecScoreDB::setEventErased(int id, bool isErased)
