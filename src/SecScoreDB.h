@@ -21,12 +21,6 @@ namespace SSDB
         std::unordered_map<int,Event>   evt;
         std::unordered_map<int,Group>   grp;
 
-        //用于还原相关
-        bool dirty=false;
-        std::unordered_map<int,Student> org_stu;
-        std::unordered_map<int,Event>   org_evt;
-        std::unordered_map<int,Group>   org_grp;
-
         //schema
         SchemaDef _stu_schema;
         SchemaDef _grp_schema;
@@ -46,9 +40,37 @@ namespace SSDB
             this->_grp_schema=schema;
         }
 
+        // 增
+        DynamicWrapper<Student> createStudent(int id);
+        DynamicWrapper<Group> createGroup(int id);
 
-        // 获取 Student / Group 对象
+        DynamicWrapper<Student> addStudent(Student s);
+        DynamicWrapper<Group> addGroup(Group g);
+        DynamicWrapper<Student> addStudent(DynamicWrapper<Student> s);
+        DynamicWrapper<Group> addGroup(DynamicWrapper<Group> g);
+
+        //查
         DynamicWrapper<Student> getStudent(int id);
         DynamicWrapper<Group> getGroup(int id);
+
+        template<typename Predicate>
+        std::vector<DynamicWrapper<Student>> getStudent(Predicate&& pred);
+        template<typename Predicate>
+        std::vector<DynamicWrapper<Student>> getGroup(Predicate&& pred);
+
+        //删
+        bool deleteStudent(int id);
+        bool deleteGroup(int id);
+
+        template<typename Predicate>
+        size_t deleteStudent(Predicate&& pred);
+        template<typename Predicate>
+        size_t deleteGroup(Predicate&& pred);
+
+        //改：外面直接操作
+
+        // 数据库事务相关
+
+        void commit();
     };
 }

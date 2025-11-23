@@ -1,16 +1,16 @@
-// DynamicWrapper.h
 #pragma once
 #include "Schema.hpp"
 #include "Group.h"
 #include "Student.h"
 #include <format>
 #include <charconv>
-#include <print>      // C++23 只有 MSVC/Clang19 支持得好
+#include <print>
 #include <stdexcept>
+#include <string_view>
 
 namespace SSDB
 {
-    template <MetadataEntity T> // 使用 Concept 约束 T 必须有 Metadata 接口
+    template <MetadataEntity T>
     class DynamicWrapper
     {
     private:
@@ -18,40 +18,69 @@ namespace SSDB
         const SchemaDef& _schema;
 
     public:
+        // 明确删除默认构造和复制赋值，强调它是引用视图
+        DynamicWrapper() = delete;
+        DynamicWrapper& operator=(const DynamicWrapper&) = delete;
+
+        // 允许移动构造（配合 AddStudent 返回值）
+        DynamicWrapper(DynamicWrapper&&) = default;
+
         DynamicWrapper(T& obj, const SchemaDef& schema) : _obj(obj), _schema(schema)
         {
         }
 
-        // 内部代理：处理 s["key"] 的中间状态
+        // -----------------------------------------------------------
+        // 优化点 1 & 3: FieldProxy 直接持有 Schema 指针，避免 map 查找和 key 拷贝
+        // -----------------------------------------------------------
         struct FieldProxy
         {
             T& obj;
-            const SchemaDef& schema;
-            std::string key;
+            // 存储指向 Schema 条目的指针 (std::pair<const string, FieldType>*)
+            // 这要求 Schema 在 Wrapper 生命周期内必须稳定 (map/unordered_map 只要不删key就是稳定的)
+            const SchemaDef::value_type* schemaEntry;
 
-            // Setter: s["age"] = 18
+            // 辅助：获取字段名和类型
+            std::string_view Name() const { return schemaEntry->first; }
+            FieldType Type() const { return schemaEntry->second; }
+
+            // Setter
             template <SupportedValue V>
             FieldProxy& operator=(const V& value)
             {
-                Validate(getTypeId<V>());
+                // 类型检查优化：错误信息包含具体的类型名称
+                if (getTypeId<V>() != Type())
+                {
+                    throw std::runtime_error(std::format(
+                        "Type mismatch for field '{}'. Expected {}, got {}.",
+                        Name(), (int)Type(), (int)getTypeId<V>() // 实际代码可以用 Helper 转枚举名为字符串
+                    ));
+                }
 
                 if constexpr (std::is_arithmetic_v<std::decay_t<V>>)
                 {
-                    obj.SetMetadataValue(key, std::format("{}", value)); // C++20 format
+                    obj.SetMetadataValue(std::string(Name()), std::format("{}", value));
                 }
                 else
                 {
-                    obj.SetMetadataValue(key, value);
+                    obj.SetMetadataValue(std::string(Name()), value);
                 }
                 return *this;
             }
 
-            // Getter: int x = s["age"]
+            // Getter
             template <SupportedValue V>
             operator V() const
             {
-                Validate(getTypeId<V>());
-                std::string str = obj.GetMetadataValue(key);
+                // 类型检查
+                if (getTypeId<V>() != Type())
+                {
+                    throw std::runtime_error(std::format(
+                        "Type mismatch for field '{}' during read. Expected {}, requested {}.",
+                        Name(), (int)Type(), (int)getTypeId<V>()
+                    ));
+                }
+
+                std::string str = obj.GetMetadataValue(std::string(Name()));
 
                 if constexpr (std::is_same_v<std::decay_t<V>, std::string>)
                 {
@@ -59,30 +88,66 @@ namespace SSDB
                 }
                 else
                 {
+                    // -----------------------------------------------------------
+                    // 优化点 2: 严厉的异常处理
+                    // -----------------------------------------------------------
+                    if (str.empty())
+                    {
+                        // 空字符串对于数字类型来说是无效的，抛异常还是返0？
+                        // 工业级通常抛异常，或者提供 Get(default_val) 接口
+                        throw std::runtime_error(std::format("Value for field '{}' is empty, cannot convert to number.",
+                                                             Name()));
+                    }
+
                     V val{};
-                    // MSVC 对浮点数的 from_chars 支持极其完美
                     auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), val);
-                    if (ec != std::errc()) return V{}; // 解析失败返回0
+
+                    if (ec == std::errc::invalid_argument)
+                    {
+                        throw std::runtime_error(std::format("Invalid number format for field '{}': \"{}\"", Name(),
+                                                             str));
+                    }
+                    else if (ec == std::errc::result_out_of_range)
+                    {
+                        throw std::runtime_error(std::format("Number out of range for field '{}': \"{}\"", Name(),
+                                                             str));
+                    }
+
+                    // 确保整个字符串都被解析了 (避免 "123abc" 被解析成 123)
+                    if (ptr != str.data() + str.size())
+                    {
+                        throw std::runtime_error(std::format("Partial conversion error for field '{}': \"{}\"", Name(),
+                                                             str));
+                    }
+
                     return val;
                 }
             }
-
-        private:
-            void Validate(FieldType type) const
-            {
-                if (!schema.contains(key)) // C++20 contains
-                    throw std::runtime_error(std::format("Field '{}' not found in Schema", key));
-                if (schema.at(key) != type)
-                    throw std::runtime_error(std::format("Type mismatch for '{}'", key));
-            }
         };
 
-        // C++23 Deducing This: 显式对象参数
-        // 不再需要写 const重载 和 非const重载 两个版本
+        // operator[] 实现
         template <typename Self>
-        auto operator[](this Self&& self, std::string key)
+        auto operator[](this Self&& self, std::string_view key)
         {
-            return FieldProxy{self._obj, self._schema, std::move(key)};
+            // 1. 这里做一次查找 (Map Lookup)
+            // 注意：C++20 unordered_map 支持异构查找 (transparent key comparison)
+            // 如果编译器支持，直接传 string_view，无需构造 string
+            auto it = self._schema.find(std::string(key));
+
+            if (it == self._schema.end())
+            {
+                throw std::runtime_error(std::format("Field '{}' is not defined in the Schema.", key));
+            }
+
+            // 2. 将迭代器指针传给 Proxy，避免 Proxy 内部再次查找
+            return FieldProxy{self._obj, &(*it)};
         }
+
+        // -----------------------------------------------------------
+        // 优化点 4: 显式暴露生命周期风险的接口
+        // -----------------------------------------------------------
+        // 增加一个 IsValid() 方法很难，因为只有 DB 知道。
+        // 但我们可以提供 ToStruct() 方法，快速把数据拷出来，脱离引用。
+        // (这需要复杂的元编程把 Schema 转 struct，暂时略过)
     };
 }
