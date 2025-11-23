@@ -18,16 +18,28 @@ namespace SSDB
         grp = grp_db.LoadAll<Group>();
         evt = evt_db.LoadAll<Event>();
 
+        // 初始化 Event计数器
+        _max_event_id = 0;
+        for (const auto& [id, _] : evt)
+        {
+            if (id > _max_event_id)
+            {
+                _max_event_id = id;
+            }
+        }
+
         // 打印日志
         // std::cout << "Loaded " << stu.size() << " students." << std::endl;
     }
 
     SecScoreDB::~SecScoreDB()
     {
-        try {
+        try
+        {
             commit(); // 析构时自动保存
         }
-        catch (const std::exception& e) {
+        catch (const std::exception& e)
+        {
             // 析构函数绝对不能抛出异常，只能记录日志
             std::cerr << "[SSDB Error] Failed to save DB on exit: " << e.what() << std::endl;
         }
@@ -47,7 +59,8 @@ namespace SSDB
 
     DynamicWrapper<Student> SecScoreDB::createStudent(int id)
     {
-        if (stu.contains(id)) {
+        if (stu.contains(id))
+        {
             throw std::runtime_error(std::format("Create failed: Student ID {} already exists.", id));
         }
 
@@ -63,7 +76,8 @@ namespace SSDB
     DynamicWrapper<Student> SecScoreDB::addStudent(Student s)
     {
         int id = s.GetId();
-        if (stu.contains(id)) {
+        if (stu.contains(id))
+        {
             throw std::runtime_error(std::format("Add failed: Student ID {} already exists.", id));
         }
 
@@ -77,8 +91,9 @@ namespace SSDB
         Student copyEntity = s.GetEntity();
         int id = copyEntity.GetId();
 
-        if (stu.contains(id)) {
-             throw std::runtime_error(std::format("Import failed: Student ID {} already exists.", id));
+        if (stu.contains(id))
+        {
+            throw std::runtime_error(std::format("Import failed: Student ID {} already exists.", id));
         }
 
         auto [it, success] = stu.emplace(id, std::move(copyEntity));
@@ -88,7 +103,8 @@ namespace SSDB
     DynamicWrapper<Student> SecScoreDB::getStudent(int id)
     {
         auto it = stu.find(id);
-        if (it == stu.end()) {
+        if (it == stu.end())
+        {
             throw std::runtime_error(std::format("Student ID {} not found.", id));
         }
         return DynamicWrapper<Student>(it->second, _stu_schema);
@@ -105,7 +121,8 @@ namespace SSDB
 
     DynamicWrapper<Group> SecScoreDB::createGroup(int id)
     {
-        if (grp.contains(id)) {
+        if (grp.contains(id))
+        {
             throw std::runtime_error(std::format("Create failed: Group ID {} already exists.", id));
         }
 
@@ -119,7 +136,8 @@ namespace SSDB
     DynamicWrapper<Group> SecScoreDB::addGroup(Group g)
     {
         int id = g.GetId();
-        if (grp.contains(id)) {
+        if (grp.contains(id))
+        {
             throw std::runtime_error(std::format("Add failed: Group ID {} already exists.", id));
         }
 
@@ -132,8 +150,9 @@ namespace SSDB
         Group copyEntity = g.GetEntity();
         int id = copyEntity.GetId();
 
-        if (grp.contains(id)) {
-             throw std::runtime_error(std::format("Import failed: Group ID {} already exists.", id));
+        if (grp.contains(id))
+        {
+            throw std::runtime_error(std::format("Import failed: Group ID {} already exists.", id));
         }
 
         auto [it, success] = grp.emplace(id, std::move(copyEntity));
@@ -143,7 +162,8 @@ namespace SSDB
     DynamicWrapper<Group> SecScoreDB::getGroup(int id)
     {
         auto it = grp.find(id);
-        if (it == grp.end()) {
+        if (it == grp.end())
+        {
             throw std::runtime_error(std::format("Group ID {} not found.", id));
         }
         return DynamicWrapper<Group>(it->second, _grp_schema);
@@ -152,5 +172,31 @@ namespace SSDB
     bool SecScoreDB::deleteGroup(int id)
     {
         return grp.erase(id) > 0;
+    }
+
+    void SecScoreDB::addEvent(Event e)
+    {
+        int inputId = e.GetId();
+        if (inputId == INVALID_ID) // 分配新的 id
+        {
+            _max_event_id++;
+            e.SetId(_max_event_id);
+        }
+        else
+        {
+            if (evt.contains(inputId))
+            {
+                throw std::runtime_error(std::format("Add Event using ID {} failed: ID already exists.", inputId));
+            }
+            _max_event_id = (inputId > _max_event_id ? inputId : _max_event_id);
+        }
+    }
+
+    void SecScoreDB::setEventErased(int id, bool isErased)
+    {
+        if (!this->evt.contains(id))
+            throw std::runtime_error(std::format("Event ID {} not found.", id));
+        auto it = evt.find(id);
+        it->second.SetErased(isErased);
     }
 }
