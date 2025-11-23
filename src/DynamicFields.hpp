@@ -67,8 +67,23 @@ namespace SSDB
                 return *this;
             }
 
+            operator std::string() const
+            {
+                // 1. 类型检查
+                if (Type() != FieldType::String)
+                {
+                    throw std::runtime_error(std::format(
+                        "Type mismatch for field '{}'. Expected String, got {}.",
+                        Name(), (int)Type()));
+                }
+
+                // 2. 直接返回
+                return obj.GetMetadataValue(std::string(Name()));
+            }
+
             // Getter
-            template <SupportedValue V>
+            template <typename V>
+            requires std::is_arithmetic_v<V>
             operator V() const
             {
                 // 类型检查
@@ -82,46 +97,32 @@ namespace SSDB
 
                 std::string str = obj.GetMetadataValue(std::string(Name()));
 
-                if constexpr (std::is_same_v<std::decay_t<V>, std::string>)
+                // --- 删除了原来的 if constexpr (string) 分支，因为这里 V 只能是数字 ---
+
+                // 严厉的异常处理逻辑
+                if (str.empty())
                 {
-                    return str;
+                    throw std::runtime_error(std::format("Value for field '{}' is empty, cannot convert to number.", Name()));
                 }
-                else
+
+                V val{};
+                auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), val);
+
+                if (ec == std::errc::invalid_argument)
                 {
-                    // -----------------------------------------------------------
-                    // 优化点 2: 严厉的异常处理
-                    // -----------------------------------------------------------
-                    if (str.empty())
-                    {
-                        // 空字符串对于数字类型来说是无效的，抛异常还是返0？
-                        // 工业级通常抛异常，或者提供 Get(default_val) 接口
-                        throw std::runtime_error(std::format("Value for field '{}' is empty, cannot convert to number.",
-                                                             Name()));
-                    }
-
-                    V val{};
-                    auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), val);
-
-                    if (ec == std::errc::invalid_argument)
-                    {
-                        throw std::runtime_error(std::format("Invalid number format for field '{}': \"{}\"", Name(),
-                                                             str));
-                    }
-                    else if (ec == std::errc::result_out_of_range)
-                    {
-                        throw std::runtime_error(std::format("Number out of range for field '{}': \"{}\"", Name(),
-                                                             str));
-                    }
-
-                    // 确保整个字符串都被解析了 (避免 "123abc" 被解析成 123)
-                    if (ptr != str.data() + str.size())
-                    {
-                        throw std::runtime_error(std::format("Partial conversion error for field '{}': \"{}\"", Name(),
-                                                             str));
-                    }
-
-                    return val;
+                    throw std::runtime_error(std::format("Invalid number format for field '{}': \"{}\"", Name(), str));
                 }
+                else if (ec == std::errc::result_out_of_range)
+                {
+                    throw std::runtime_error(std::format("Number out of range for field '{}': \"{}\"", Name(), str));
+                }
+
+                if (ptr != str.data() + str.size())
+                {
+                    throw std::runtime_error(std::format("Partial conversion error for field '{}': \"{}\"", Name(), str));
+                }
+
+                return val;
             }
         };
 
@@ -149,7 +150,8 @@ namespace SSDB
         // 增加一个 IsValid() 方法很难，因为只有 DB 知道。
         // 但我们可以提供 ToStruct() 方法，快速把数据拷出来，脱离引用。
         // (这需要复杂的元编程把 Schema 转 struct，暂时略过)
-        const T& GetEntity() const {
+        const T& GetEntity() const
+        {
             return _obj;
         }
     };
