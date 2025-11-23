@@ -18,6 +18,16 @@ namespace SSDB
         grp = grp_db.LoadAll<Group>();
         evt = evt_db.LoadAll<Event>();
 
+        // 初始化 Event计数器
+        _max_event_id = 0;
+        for (const auto& [id, _] : evt)
+        {
+            if (id > _max_event_id)
+            {
+                _max_event_id = id;
+            }
+        }
+
         // 打印日志
         // std::cout << "Loaded " << stu.size() << " students." << std::endl;
     }
@@ -162,5 +172,31 @@ namespace SSDB
     bool SecScoreDB::deleteGroup(int id)
     {
         return grp.erase(id) > 0;
+    }
+
+    void SecScoreDB::addEvent(Event e)
+    {
+        int inputId = e.GetId();
+        if (inputId == INVALID_ID) // 分配新的 id
+        {
+            _max_event_id++;
+            e.SetId(_max_event_id);
+        }
+        else
+        {
+            if (evt.contains(inputId))
+            {
+                throw std::runtime_error(std::format("Add Event using ID {} failed: ID already exists.", inputId));
+            }
+            _max_event_id = (inputId > _max_event_id ? inputId : _max_event_id);
+        }
+    }
+
+    void SecScoreDB::setEventErased(int id, bool isErased)
+    {
+        if (!this->evt.contains(id))
+            throw std::runtime_error(std::format("Event ID {} not found.", id));
+        auto it = evt.find(id);
+        it->second.SetErased(isErased);
     }
 }

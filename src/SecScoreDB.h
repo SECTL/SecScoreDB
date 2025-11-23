@@ -6,8 +6,10 @@
 #include "Group.h"
 #include <unordered_map>
 #include <filesystem>
+#include <deque>
 
 #include "DynamicFields.hpp"
+#include <functional>
 
 namespace SSDB
 {
@@ -24,6 +26,9 @@ namespace SSDB
         //schema
         SchemaDef _stu_schema;
         SchemaDef _grp_schema;
+        //other things
+
+        int _max_event_id = 0;
 
         void assertStudentSchema() const
         {
@@ -38,7 +43,7 @@ namespace SSDB
         }
 
     public:
-        SecScoreDB(const std::filesystem::path& path);
+        explicit SecScoreDB(const std::filesystem::path& path);
         ~SecScoreDB();
 
         // init schema for grp & stu
@@ -156,7 +161,7 @@ namespace SSDB
         {
             return std::erase_if(grp, [&](auto& pair)
             {
-                                Group& entity = pair.second;
+                Group& entity = pair.second;
                 DynamicWrapper<Group> wrapper(entity, _grp_schema);
                 try
                 {
@@ -170,6 +175,29 @@ namespace SSDB
         }
 
         //改：外面直接操作
+
+        // 简单事件操作
+
+        void addEvent(Event e);
+        void setEventErased(int id, bool isErased = true);
+
+        template <typename Predicate>
+        std::vector<std::reference_wrapper<const Event>> getEvents(Predicate&& pred) const
+        {
+            std::vector<std::reference_wrapper<const Event>> results;
+            results.reserve(16); // 预留一点空间，稍微优化下
+
+            for (const auto& [id, e] : evt)
+            {
+                // 直接把 const Event& 传给 lambda
+                if (pred(e))
+                {
+                    // 存入 reference_wrapper
+                    results.emplace_back(e);
+                }
+            }
+            return results;
+        }
 
         // 数据库事务相关
 

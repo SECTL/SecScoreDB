@@ -11,12 +11,13 @@
 
 namespace SSDB
 {
+    static constexpr int INVALID_ID = -1;
     class Event
     {
     private:
         // 1. 类内初始化：直接在这里赋默认值，更安全，更现代
         std::chrono::time_point<std::chrono::system_clock> event_time = std::chrono::system_clock::now();
-        int id = 0;
+        int id = INVALID_ID;
         EventType event_type = EventType::STUDENT; // 假设这是默认值
         int operating_object = 0;
         std::string reason;
