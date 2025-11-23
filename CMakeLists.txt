@@ -6,6 +6,11 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)  # 禁用编译器扩展，使用标准C++
 
+if (MSVC)
+    add_compile_options(/utf-8)
+    add_compile_options(/wd4819) # 可选：如果转换后还报错，可以屏蔽这个特定警告
+endif()
+
 # 查找依赖包
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(cereal CONFIG REQUIRED)

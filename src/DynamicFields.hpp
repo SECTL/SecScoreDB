@@ -149,5 +149,8 @@ namespace SSDB
         // 增加一个 IsValid() 方法很难，因为只有 DB 知道。
         // 但我们可以提供 ToStruct() 方法，快速把数据拷出来，脱离引用。
         // (这需要复杂的元编程把 Schema 转 struct，暂时略过)
+        const T& GetEntity() const {
+            return _obj;
+        }
     };
 }
