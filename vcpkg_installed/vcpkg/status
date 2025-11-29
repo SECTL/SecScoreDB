@@ -32,3 +32,46 @@ Abi: 032e79057e3b866633f5dcba531cd056dbcc56d591efc38a744ebfb1bf373fab
 Description: JSON for Modern C++
 Status: install ok installed
 
+Package: mbedtls
+Version: 3.6.4
+Depends: vcpkg-cmake, vcpkg-cmake-config
+Architecture: x64-windows
+Multi-Arch: same
+Abi: 50d222cead472f75d72c4f1021c846e1681c6b679051150938d407b4d1853355
+Description: An open source, portable, easy to use, readable and flexible SSL library
+Status: install ok installed
+
+Package: zlib
+Version: 1.3.1
+Depends: vcpkg-cmake
+Architecture: x64-windows
+Multi-Arch: same
+Abi: feae4ee6a5e2df5b856192c59b8c970c0adfb427918b41293ab1a00fbb30993c
+Description: A compression library
+Status: install ok installed
+
+Package: ixwebsocket
+Version: 11.4.6
+Depends: vcpkg-cmake, vcpkg-cmake-config, zlib
+Architecture: x64-windows
+Multi-Arch: same
+Abi: b7fc8ddfc105ee24c2d32ec8cf152f136b53f90bfd6386cdff4cf1fa6d601b03
+Description: Lightweight WebSocket Client and Server + HTTP Client and Server
+Default-Features: ssl
+Status: install ok installed
+
+Package: ixwebsocket
+Feature: mbedtls
+Depends: mbedtls
+Architecture: x64-windows
+Multi-Arch: same
+Description: SSL support (mbedTLS)
+Status: install ok installed
+
+Package: ixwebsocket
+Feature: ssl
+Architecture: x64-windows
+Multi-Arch: same
+Description: Default SSL backend
+Status: install ok installed
+

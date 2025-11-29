@@ -95,27 +95,3 @@ Run (after build):
 ./build/SecScoreDBApp.exe
 ```
 
-## Error Handling Philosophy
-- Field type mismatches throw `std::runtime_error`.
-- Numeric conversions validate full consumption of the source string (rejects partial parses like "123abc").
-- Missing fields or schema violations surface early via exceptions.
-
-## Roadmap / Possible Extensions
-- Additional field types (Bool, Date/Time, Enum)
-- Indexing and secondary query acceleration
-- Transaction journaling & WAL
-- Incremental snapshot merging
-- Optional JSON export/import layer (leveraging `nlohmann-json`)
-
-## License
-Licensed under GNU Lesser General Public License v2.1. See [LICENSE](LICENSE) for details.
-
-## Contributing
-Issues and Pull Requests are welcome. Please:
-1. Keep changes focused.
-2. Add/adjust tests for new behaviors.
-3. Document new public APIs in both `README.md` and `README_EN.md`.
-
----
-*This English README mirrors the content of the Chinese `README.md` and adds minor clarifications for international users.*
-

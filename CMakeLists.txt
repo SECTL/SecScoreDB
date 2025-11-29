@@ -57,3 +57,22 @@ endif()
 # 例如：
 # add_executable(main main.cpp)
 # target_link_libraries(main PRIVATE Secscoredb_cmake)
+
+# -------------------------------------------------------------
+# Wrappers / example executables
+# -------------------------------------------------------------
+# Add a WebSockets wrapper executable that links to our SecScoreDB static library
+if (EXISTS "${PROJECT_SOURCE_DIR}/wrappers/websockets/main.cpp")
+    add_executable(SecScoreDB-Websockets
+        wrappers/websockets/main.cpp
+    )
+    # Link against the library we defined earlier
+    find_package(ixwebsocket CONFIG REQUIRED)
+    target_link_libraries(SecScoreDB-Websockets PRIVATE SecScoreDB)
+    target_link_libraries(SecScoreDB-Websockets PRIVATE ixwebsocket::ixwebsocket)
+    # Ensure the wrapper can find project headers and its own headers
+    target_include_directories(SecScoreDB-Websockets PRIVATE
+        ${PROJECT_SOURCE_DIR}/src
+        ${PROJECT_SOURCE_DIR}/wrappers/websockets
+    )
+endif()
