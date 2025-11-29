@@ -29,7 +29,7 @@ int main(int argc, char** argv)
             }
             if (arg == "--db" && i + 1 < argc)
             {
-                dbPath = argv[++i];
+                dbPath = std::filesystem::path(argv[++i]);
                 continue;
             }
             std::cerr << "Unknown argument: " << arg << "\n";
@@ -38,8 +38,8 @@ int main(int argc, char** argv)
         }
 
         ix::initNetSystem();
-        SSDB::SecScoreDB database(dbPath);
         std::mutex dbMutex;
+        SSDB::SecScoreDB database(dbPath);
         ws::RequestContext ctx{database, dbMutex};
 
         ix::WebSocketServer server(port);
@@ -123,7 +123,7 @@ int main(int argc, char** argv)
             return 1;
         }
         std::cout << "SecScoreDB WebSocket server listening on ws://0.0.0.0:" << port
-                  << " using data directory '" << dbPath.string() << "'" << std::endl;
+                  << " using data directory: " << dbPath.string() << std::endl;
         server.wait();
         ix::uninitNetSystem();
     }

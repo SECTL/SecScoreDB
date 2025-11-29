@@ -173,7 +173,20 @@ Content-Type: application/json
 
 ###
 
-### 8. 测试错误处理：无效的 category
+### 8. 手动触发持久化 (system/commit)
+WEBSOCKET {{wsUrl}}
+Content-Type: application/json
+
+{
+  "seq": "test-commit",
+  "category": "system",
+  "action": "commit",
+  "payload": {}
+}
+
+###
+
+### 9. 测试错误处理：无效的 category
 WEBSOCKET {{wsUrl}}
 Content-Type: application/json
 
@@ -186,7 +199,7 @@ Content-Type: application/json
 
 ###
 
-### 9. 测试错误处理：缺少 seq
+### 10. 测试错误处理：缺少 seq
 WEBSOCKET {{wsUrl}}
 Content-Type: application/json
 
@@ -197,4 +210,3 @@ Content-Type: application/json
 }
 
 ###
-

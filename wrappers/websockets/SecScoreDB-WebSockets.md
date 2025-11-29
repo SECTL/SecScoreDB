@@ -102,6 +102,33 @@ cmake --build . --target SecScoreDB-Websockets
 }
 ```
 
+### 3.2 手动持久化 (Commit)
+
+* **Action**: `commit`
+* **Payload**: `{}`
+
+用于显式触发持久化（相当于 `db.commit()`），方便客户端在批量写入后立即刷盘。
+
+**请求示例**：
+
+```json
+{
+    "category": "system",
+    "action": "commit",
+    "payload": {}
+}
+```
+
+**响应示例**：
+
+```json
+{
+    "status": "ok",
+    "code": 200,
+    "data": { "committed": true }
+}
+```
+
 ---
 
 ## 4. 核心资源操作 (`category: "student" | "group"`)
@@ -337,4 +364,3 @@ cmake --build . --target SecScoreDB-Websockets
 | **404** | Not Found | 目标资源 ID 不存在。 |
 | **422** | Unprocessable | 逻辑错误 (如对 Int 字段使用 `contains`，或自动创建时 ID 不为 null)。 |
 | **500** | Internal Error | 服务端内部异常或存储失败。 |
-

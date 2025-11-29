@@ -173,6 +173,12 @@ namespace ws
                       RequestContext& ctx)
     {
         auto action = toLowerCopy(actionRaw);
+        if (action == "commit")
+        {
+            std::scoped_lock lock(ctx.mutex);
+            ctx.db.commit();
+            return json{{"committed", true}};
+        }
         if (action != "define")
         {
             throw ApiError(400, "Unsupported system action: " + actionRaw);
