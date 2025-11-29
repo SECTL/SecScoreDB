@@ -14,6 +14,7 @@ endif()
 # 查找依赖包
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(cereal CONFIG REQUIRED)
+find_package(ixwebsocket CONFIG REQUIRED)
 
 # 添加静态库 - 只包含源文件，不包含头文件
 add_library(SecScoreDB STATIC
@@ -65,11 +66,16 @@ endif()
 if (EXISTS "${PROJECT_SOURCE_DIR}/wrappers/websockets/main.cpp")
     add_executable(SecScoreDB-Websockets
         wrappers/websockets/main.cpp
+        wrappers/websockets/Protocol.cpp
+        wrappers/websockets/Handlers.cpp
+        wrappers/websockets/JsonUtils.cpp
+        wrappers/websockets/Errors.cpp
     )
     # Link against the library we defined earlier
-    find_package(ixwebsocket CONFIG REQUIRED)
+
     target_link_libraries(SecScoreDB-Websockets PRIVATE SecScoreDB)
-    target_link_libraries(SecScoreDB-Websockets PRIVATE ixwebsocket::ixwebsocket)
+    # mbedtls (mbedcrypto) may call BCryptGenRandom on Windows; link bcrypt.lib to resolve it
+    target_link_libraries(SecScoreDB-Websockets PRIVATE ixwebsocket::ixwebsocket bcrypt)
     # Ensure the wrapper can find project headers and its own headers
     target_include_directories(SecScoreDB-Websockets PRIVATE
         ${PROJECT_SOURCE_DIR}/src
