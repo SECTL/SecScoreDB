@@ -48,6 +48,12 @@ int main(int argc, char** argv)
                                               ix::WebSocket& connection,
                                               const ix::WebSocketMessagePtr& msg)
         {
+            std::cout << "[DEBUG] Message type: " << static_cast<int>(msg->type) << std::endl;
+            if (msg->type == ix::WebSocketMessageType::Message)
+            {
+                std::cout << "[DEBUG] Received: " << msg->str << std::endl;
+            }
+
             if (msg->type != ix::WebSocketMessageType::Message)
             {
                 return;
@@ -62,6 +68,8 @@ int main(int argc, char** argv)
                     throw ws::ApiError(400, "seq is required and must be string.");
                 }
                 seq = request.at("seq").get<std::string>();
+                std::cout << "[DEBUG] Processing seq: " << seq << std::endl;
+
                 if (!request.contains("category") || !request.at("category").is_string())
                 {
                     throw ws::ApiError(400, "category is required.");
@@ -84,19 +92,28 @@ int main(int argc, char** argv)
                                          request.at("action").get<std::string>(),
                                          payload,
                                          ctx);
-                connection.send(ws::makeOkResponse(seq, data).dump());
+                auto response = ws::makeOkResponse(seq, data).dump();
+                std::cout << "[DEBUG] Sending: " << response << std::endl;
+                auto result = connection.send(response);
+                std::cout << "[DEBUG] Send result: " << (result.success ? "SUCCESS" : "FAILED") << std::endl;
             }
             catch (const ws::ApiError& err)
             {
-                connection.send(ws::makeErrorResponse(seq, err.code, err.what()).dump());
+                auto response = ws::makeErrorResponse(seq, err.code, err.what()).dump();
+                std::cout << "[DEBUG] Sending error: " << response << std::endl;
+                connection.send(response);
             }
             catch (const json::exception& err)
             {
-                connection.send(ws::makeErrorResponse(seq, 400, std::string("Invalid JSON: ") + err.what()).dump());
+                auto response = ws::makeErrorResponse(seq, 400, std::string("Invalid JSON: ") + err.what()).dump();
+                std::cout << "[DEBUG] Sending JSON error: " << response << std::endl;
+                connection.send(response);
             }
             catch (const std::exception& err)
             {
-                connection.send(ws::makeErrorResponse(seq, 500, err.what()).dump());
+                auto response = ws::makeErrorResponse(seq, 500, err.what()).dump();
+                std::cout << "[DEBUG] Sending exception: " << response << std::endl;
+                connection.send(response);
             }
         });
 

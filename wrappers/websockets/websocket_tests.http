@@ -1,0 +1,200 @@
+@wsUrl = ws://localhost:8765
+
+# =============================================================================
+# SecScoreDB WebSocket 完整测试套件
+# =============================================================================
+#
+# ⚠️ 重要说明：如何查看 WebSocket 响应
+#
+# JetBrains HTTP Client 的 WebSocket 响应显示方式特殊：
+#
+# 1. ❌ "响应正文"选项卡会显示为空（这是正常的！）
+#    - 这里只显示 HTTP 握手响应（101 Switching Protocols）
+#    - 实际的 WebSocket 消息不会在这里显示
+#
+# 2. ✅ 查看实际响应的三种方法：
+#
+#    方法 A：查看服务端控制台（最直接）
+#    -------------------------------------
+#    服务端会打印所有收发消息：
+#    [DEBUG] Received: {...}
+#    [DEBUG] Sending: {"code":200,"data":{...},...}
+#    [DEBUG] Send result: SUCCESS
+#
+#    方法 B：IDE 的 WebSocket 工具窗口
+#    -----------------------------------
+#    - CLion/IntelliJ: View → Tool Windows → Services
+#    - 展开 "HTTP Client" → 找到对应的 WebSocket 连接
+#    - 可以看到完整的消息收发历史
+#
+#    方法 C：使用外部工具验证
+#    -------------------------
+#    - wscat: wscat -c ws://localhost:8765
+#    - Postman: 新建 WebSocket 请求
+#    - 浏览器控制台: new WebSocket('ws://localhost:8765')
+#
+# 3. ✅ 验证测试成功的标志：
+#    - 服务端日志显示 "Send result: SUCCESS"
+#    - 没有异常或错误信息
+#    - 响应 JSON 中 "status": "ok"
+#
+# =============================================================================
+
+### 1. 定义 Student Schema
+WEBSOCKET {{wsUrl}}
+Content-Type: application/json
+
+{
+  "seq": "test-define-schema",
+  "category": "system",
+  "action": "define",
+  "payload": {
+    "target": "student",
+    "schema": {
+      "name": "string",
+      "age": "int",
+      "score": "double",
+      "class": "string"
+    }
+  }
+}
+
+###
+
+### 2. 批量创建学生
+WEBSOCKET {{wsUrl}}
+Content-Type: application/json
+
+{
+  "seq": "test-create-students",
+  "category": "student",
+  "action": "create",
+  "payload": {
+    "items": [
+      { "index": 0, "id": null, "data": { "name": "Alice", "age": 18, "class": "A-1", "score": 95.5 } },
+      { "index": 1, "id": 999, "data": { "name": "Bob", "age": 20, "class": "B-2", "score": 88.0 } }
+    ]
+  }
+}
+
+###
+
+### 3. 查询学生（年龄>=18 且 name包含"Ali" 或 class以"A-"开头）
+WEBSOCKET {{wsUrl}}
+Content-Type: application/json
+
+{
+  "seq": "test-query-students",
+  "category": "student",
+  "action": "query",
+  "payload": {
+    "logic": {
+      "op": "AND",
+      "rules": [
+        { "field": "age", "op": ">=", "val": 18 },
+        { "op": "OR", "rules": [
+            { "field": "name", "op": "contains", "val": "Ali" },
+            { "field": "class", "op": "starts_with", "val": "A-" }
+        ]}
+      ]
+    }
+  }
+}
+
+###
+
+### 4. 更新学生分数（使用步骤2返回的 id=1002）
+# 根据你的日志，自动分配的学生 ID 是 1002
+WEBSOCKET {{wsUrl}}
+Content-Type: application/json
+
+{
+  "seq": "test-update-student",
+  "category": "student",
+  "action": "update",
+  "payload": {
+    "id": 1002,
+    "set": {
+      "score": 97.0
+    }
+  }
+}
+
+###
+
+### 5. 创建事件（引用学生 id=1002）
+WEBSOCKET {{wsUrl}}
+Content-Type: application/json
+
+{
+  "seq": "test-create-event",
+  "category": "event",
+  "action": "create",
+  "payload": {
+    "id": null,
+    "type": 1,
+    "ref_id": 1002,
+    "desc": "Bonus points",
+    "val_prev": 90.0,
+    "val_curr": 95.0
+  }
+}
+
+###
+
+### 6. 标记事件为已擦除（假设事件 id=1，请根据步骤5的响应调整）
+WEBSOCKET {{wsUrl}}
+Content-Type: application/json
+
+{
+  "seq": "test-erase-event",
+  "category": "event",
+  "action": "update",
+  "payload": {
+    "id": 1,
+    "erased": true
+  }
+}
+
+###
+
+### 7. 删除手动创建的学生 (id=999)
+WEBSOCKET {{wsUrl}}
+Content-Type: application/json
+
+{
+  "seq": "test-delete-student",
+  "category": "student",
+  "action": "delete",
+  "payload": {
+    "id": 999
+  }
+}
+
+###
+
+### 8. 测试错误处理：无效的 category
+WEBSOCKET {{wsUrl}}
+Content-Type: application/json
+
+{
+  "seq": "test-error-invalid-category",
+  "category": "invalid_category",
+  "action": "query",
+  "payload": {}
+}
+
+###
+
+### 9. 测试错误处理：缺少 seq
+WEBSOCKET {{wsUrl}}
+Content-Type: application/json
+
+{
+  "category": "student",
+  "action": "query",
+  "payload": {}
+}
+
+###
+
