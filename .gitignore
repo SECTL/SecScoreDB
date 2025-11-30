@@ -1,6 +1,9 @@
 # Prerequisites
 *.d
 
+# vcpkg files
+vcpkg_installed
+
 # Compiled Object files
 *.slo
 *.lo
