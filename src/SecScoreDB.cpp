@@ -1,4 +1,5 @@
 #include "SecScoreDB.h"
+#include <algorithm>
 #include <iostream>
 #include <format> // C++20
 
@@ -25,6 +26,24 @@ namespace SSDB
             if (id > _max_event_id)
             {
                 _max_event_id = id;
+            }
+        }
+
+        _max_student_id = 0;
+        for (const auto& [id, _] : stu)
+        {
+            if (id > _max_student_id)
+            {
+                _max_student_id = id;
+            }
+        }
+
+        _max_group_id = 0;
+        for (const auto& [id, _] : grp)
+        {
+            if (id > _max_group_id)
+            {
+                _max_group_id = id;
             }
         }
 
@@ -67,9 +86,11 @@ namespace SSDB
         Student s;
         s.SetId(id);
 
+        _max_student_id = std::max(_max_student_id, id);
+
         // 移动语义插入，高效
         auto [it, success] = stu.emplace(id, std::move(s));
-
+        _max_student_id = std::max(_max_student_id, id);
         return DynamicWrapper<Student>(it->second, _stu_schema);
     }
 
@@ -82,6 +103,7 @@ namespace SSDB
         }
 
         auto [it, success] = stu.emplace(id, std::move(s));
+        _max_student_id = std::max(_max_student_id, id);
         return DynamicWrapper<Student>(it->second, _stu_schema);
     }
 
@@ -97,6 +119,7 @@ namespace SSDB
         }
 
         auto [it, success] = stu.emplace(id, std::move(copyEntity));
+        _max_student_id = std::max(_max_student_id, id);
         return DynamicWrapper<Student>(it->second, _stu_schema);
     }
 
@@ -129,7 +152,10 @@ namespace SSDB
         Group g;
         g.SetId(id);
 
+        _max_group_id = std::max(_max_group_id, id);
+
         auto [it, success] = grp.emplace(id, std::move(g));
+        _max_group_id = std::max(_max_group_id, id);
         return DynamicWrapper<Group>(it->second, _grp_schema);
     }
 
@@ -142,6 +168,7 @@ namespace SSDB
         }
 
         auto [it, success] = grp.emplace(id, std::move(g));
+        _max_group_id = std::max(_max_group_id, id);
         return DynamicWrapper<Group>(it->second, _grp_schema);
     }
 
@@ -156,6 +183,7 @@ namespace SSDB
         }
 
         auto [it, success] = grp.emplace(id, std::move(copyEntity));
+        _max_group_id = std::max(_max_group_id, id);
         return DynamicWrapper<Group>(it->second, _grp_schema);
     }
 
@@ -174,7 +202,7 @@ namespace SSDB
         return grp.erase(id) > 0;
     }
 
-    void SecScoreDB::addEvent(Event e)
+    int SecScoreDB::addEvent(Event e)
     {
         int inputId = e.GetId();
         if (inputId == INVALID_ID) // 分配新的 id
@@ -192,6 +220,7 @@ namespace SSDB
         }
         // 实际插入事件存储
         evt.emplace(e.GetId(), std::move(e));
+        return _max_event_id;
     }
 
     void SecScoreDB::setEventErased(int id, bool isErased)
