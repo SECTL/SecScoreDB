@@ -29,6 +29,8 @@ namespace SSDB
         //other things
 
         int _max_event_id = 0;
+        int _max_student_id = 0;
+        int _max_group_id = 0;
 
         void assertStudentSchema() const
         {
@@ -57,6 +59,24 @@ namespace SSDB
         {
             this->_grp_schema = schema;
         }
+
+        int allocateStudentId()
+        {
+            return ++_max_student_id;
+        }
+
+        int allocateGroupId()
+        {
+            return ++_max_group_id;
+        }
+
+        bool hasStudent(int id) const { return stu.contains(id); }
+        bool hasGroup(int id) const { return grp.contains(id); }
+
+        const std::unordered_map<int, Student>& students() const { return stu; }
+        const std::unordered_map<int, Group>& groups() const { return grp; }
+        const SchemaDef& studentSchema() const { return _stu_schema; }
+        const SchemaDef& groupSchema() const { return _grp_schema; }
 
         // 增
         DynamicWrapper<Student> createStudent(int id);
@@ -178,7 +198,7 @@ namespace SSDB
 
         // 简单事件操作
 
-        void addEvent(Event e);
+        int addEvent(Event e);
         void setEventErased(int id, bool isErased = true);
 
         template <typename Predicate>

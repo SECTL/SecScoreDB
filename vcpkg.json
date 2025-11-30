@@ -1,6 +1,7 @@
-﻿{
+{
   "dependencies": [
     "cereal",
-    "nlohmann-json"
+    "nlohmann-json",
+    "ixwebsocket"
   ]
 }
