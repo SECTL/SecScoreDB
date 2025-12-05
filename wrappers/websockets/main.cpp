@@ -2,6 +2,8 @@
 #include <iostream>
 #include <mutex>
 #include <string>
+#include <unordered_map>
+#include <optional>
 
 #include <nlohmann/json.hpp>
 #include <ixwebsocket/IXWebSocketServer.h>
@@ -40,14 +42,28 @@ int main(int argc, char** argv)
         ix::initNetSystem();
         std::mutex dbMutex;
         SSDB::SecScoreDB database(dbPath);
-        ws::RequestContext ctx{database, dbMutex};
+
+        // 为每个连接存储独立的登录状态
+        std::unordered_map<std::string, std::optional<int>> connectionUserMap;
+        std::mutex connectionMapMutex;
 
         ix::WebSocketServer server(port);
 
-        server.setOnClientMessageCallback([&](std::shared_ptr<ix::ConnectionState>,
+        server.setOnClientMessageCallback([&](std::shared_ptr<ix::ConnectionState> connState,
                                               ix::WebSocket& connection,
                                               const ix::WebSocketMessagePtr& msg)
         {
+            std::string connId = connState->getId();
+
+            // 处理连接关闭，清理登录状态
+            if (msg->type == ix::WebSocketMessageType::Close)
+            {
+                std::scoped_lock lock(connectionMapMutex);
+                connectionUserMap.erase(connId);
+                std::cout << "[DEBUG] Connection " << connId << " closed, cleaned up user state" << std::endl;
+                return;
+            }
+
             std::cout << "[DEBUG] Message type: " << static_cast<int>(msg->type) << std::endl;
             if (msg->type == ix::WebSocketMessageType::Message)
             {
@@ -58,6 +74,16 @@ int main(int argc, char** argv)
             {
                 return;
             }
+
+            // 获取或创建此连接的登录状态
+            std::optional<int> currentUserId;
+            {
+                std::scoped_lock lock(connectionMapMutex);
+                currentUserId = connectionUserMap[connId];
+            }
+
+            // 创建此请求的上下文
+            ws::RequestContext ctx{database, dbMutex, currentUserId};
 
             std::string seq;
             try
@@ -92,6 +118,13 @@ int main(int argc, char** argv)
                                          request.at("action").get<std::string>(),
                                          payload,
                                          ctx);
+
+                // 保存更新后的登录状态
+                {
+                    std::scoped_lock lock(connectionMapMutex);
+                    connectionUserMap[connId] = ctx.currentUserId;
+                }
+
                 auto response = ws::makeOkResponse(seq, data).dump();
                 std::cout << "[DEBUG] Sending: " << response << std::endl;
                 auto result = connection.send(response);

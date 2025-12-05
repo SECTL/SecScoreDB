@@ -390,6 +390,126 @@ namespace SSDB
             return ++_max_user_id;
         }
 
+        // ============================================================
+        // WebSocket API 支持方法
+        // ============================================================
+
+        /**
+         * @brief 验证密码（不登录）
+         */
+        bool verifyPassword(int userId, const std::string& password) const
+        {
+            auto it = users.find(userId);
+            if (it == users.end()) return false;
+            return it->second.GetPasswordHash() == simpleHash(password);
+        }
+
+        /**
+         * @brief 通过用户名查找用户
+         */
+        std::optional<std::reference_wrapper<const User>> findUserByUsername(const std::string& username) const
+        {
+            auto it = usernameIndex.find(username);
+            if (it == usernameIndex.end()) return std::nullopt;
+            auto userIt = users.find(it->second);
+            if (userIt == users.end()) return std::nullopt;
+            return std::cref(userIt->second);
+        }
+
+        /**
+         * @brief 通过 ID 查找用户
+         */
+        std::optional<std::reference_wrapper<const User>> findUserById(int userId) const
+        {
+            auto it = users.find(userId);
+            if (it == users.end()) return std::nullopt;
+            return std::cref(it->second);
+        }
+
+        /**
+         * @brief 获取下一个用户 ID（不分配）
+         */
+        int getNextUserId() const
+        {
+            return _max_user_id + 1;
+        }
+
+        /**
+         * @brief 密码哈希公开方法（用于创建用户）
+         */
+        std::string hashPassword(const std::string& password) const
+        {
+            return simpleHash(password);
+        }
+
+        /**
+         * @brief 添加用户（不检查权限，由调用者负责）
+         */
+        void addUser(const User& user)
+        {
+            if (usernameIndex.contains(user.GetUsername()))
+            {
+                throw std::runtime_error("Username '" + user.GetUsername() + "' already exists.");
+            }
+            users[user.GetId()] = user;
+            usernameIndex[user.GetUsername()] = user.GetId();
+            if (user.GetId() > _max_user_id)
+            {
+                _max_user_id = user.GetId();
+            }
+        }
+
+        /**
+         * @brief 删除用户（不检查权限，由调用者负责）
+         */
+        bool removeUser(int userId)
+        {
+            auto it = users.find(userId);
+            if (it == users.end()) return false;
+            usernameIndex.erase(it->second.GetUsername());
+            users.erase(it);
+            return true;
+        }
+
+        /**
+         * @brief 更新用户权限（不检查权限，由调用者负责）
+         */
+        void updateUserPermission(int userId, Permission perm)
+        {
+            auto it = users.find(userId);
+            if (it == users.end())
+            {
+                throw std::runtime_error("User ID " + std::to_string(userId) + " not found.");
+            }
+            it->second.SetPermission(perm);
+        }
+
+        /**
+         * @brief 更新用户密码（不检查权限，由调用者负责）
+         */
+        void updateUserPassword(int userId, const std::string& newPassword)
+        {
+            auto it = users.find(userId);
+            if (it == users.end())
+            {
+                throw std::runtime_error("User ID " + std::to_string(userId) + " not found.");
+            }
+            it->second.SetPasswordHash(simpleHash(newPassword));
+        }
+
+        /**
+         * @brief 更新用户激活状态（不检查权限，由调用者负责）
+         */
+        void updateUserActive(int userId, bool active)
+        {
+            auto it = users.find(userId);
+            if (it == users.end())
+            {
+                throw std::runtime_error("User ID " + std::to_string(userId) + " not found.");
+            }
+            it->second.SetActive(active);
+        }
+
     private:
         /**
          * @brief 创建默认的 root 用户
