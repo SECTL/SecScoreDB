@@ -21,5 +21,9 @@ namespace ws
     nlohmann::json handleEvent(const std::string& actionRaw,
                                const nlohmann::json& payload,
                                RequestContext& ctx);
+
+    nlohmann::json handleUser(const std::string& actionRaw,
+                              const nlohmann::json& payload,
+                              RequestContext& ctx);
 }
 

@@ -30,6 +30,10 @@ namespace ws
         {
             return handleEvent(action, payload, ctx);
         }
+        if (cat == "user")
+        {
+            return handleUser(action, payload, ctx);
+        }
         throw ApiError(400, "Unsupported category: " + category);
     }
 

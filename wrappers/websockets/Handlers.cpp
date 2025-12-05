@@ -5,6 +5,8 @@
 #include <chrono>
 
 #include "JsonUtils.hpp"
+#include "Permission.h"
+#include "UserManager.h"
 
 using nlohmann::json;
 
@@ -347,5 +349,376 @@ namespace ws
             return json{{"id", id}, {"erased", payload.at("erased").get<bool>()}};
         }
         throw ApiError(400, "Unsupported event action: " + actionRaw);
+    }
+
+    // 辅助函数：将 Permission 转换为 JSON 字符串
+    std::string permissionToJsonString(SSDB::Permission perm)
+    {
+        using SSDB::Permission;
+        if (perm == Permission::ROOT) return "root";
+        if (perm == Permission::NONE) return "none";
+
+        std::string result;
+        if (SSDB::hasPermission(perm, Permission::READ))
+        {
+            result += "read";
+        }
+        if (SSDB::hasPermission(perm, Permission::WRITE))
+        {
+            if (!result.empty()) result += ",";
+            result += "write";
+        }
+        if (SSDB::hasPermission(perm, Permission::DELETE))
+        {
+            if (!result.empty()) result += ",";
+            result += "delete";
+        }
+        return result.empty() ? "none" : result;
+    }
+
+    // 辅助函数：从 JSON 字符串解析 Permission
+    SSDB::Permission parsePermissionFromJson(const json& val)
+    {
+        using SSDB::Permission;
+
+        if (val.is_string())
+        {
+            std::string str = toLowerCopy(val.get<std::string>());
+            if (str == "root") return Permission::ROOT;
+            if (str == "none") return Permission::NONE;
+            if (str == "read") return Permission::READ;
+            if (str == "write") return Permission::WRITE;
+            if (str == "delete") return Permission::DELETE;
+            if (str == "read,write" || str == "write,read") return Permission::READ | Permission::WRITE;
+            if (str == "read,delete" || str == "delete,read") return Permission::READ | Permission::DELETE;
+            if (str == "write,delete" || str == "delete,write") return Permission::WRITE | Permission::DELETE;
+
+            // 解析逗号分隔的权限
+            Permission result = Permission::NONE;
+            if (str.find("read") != std::string::npos) result = result | Permission::READ;
+            if (str.find("write") != std::string::npos) result = result | Permission::WRITE;
+            if (str.find("delete") != std::string::npos) result = result | Permission::DELETE;
+            return result;
+        }
+        else if (val.is_array())
+        {
+            Permission result = Permission::NONE;
+            for (const auto& p : val)
+            {
+                if (p.is_string())
+                {
+                    std::string s = toLowerCopy(p.get<std::string>());
+                    if (s == "read") result = result | Permission::READ;
+                    else if (s == "write") result = result | Permission::WRITE;
+                    else if (s == "delete") result = result | Permission::DELETE;
+                    else if (s == "root") return Permission::ROOT;
+                }
+            }
+            return result;
+        }
+
+        throw ApiError(422, "permission must be a string or array of strings.");
+    }
+
+    json handleUser(const std::string& actionRaw,
+                    const json& payload,
+                    RequestContext& ctx)
+    {
+        auto action = toLowerCopy(actionRaw);
+        auto& userMgr = ctx.db.userManager();
+
+        // 登录操作
+        if (action == "login")
+        {
+            if (!payload.contains("username") || !payload.at("username").is_string())
+            {
+                throw ApiError(400, "payload.username must be string.");
+            }
+            if (!payload.contains("password") || !payload.at("password").is_string())
+            {
+                throw ApiError(400, "payload.password must be string.");
+            }
+
+            std::scoped_lock lock(ctx.mutex);
+            std::string username = payload.at("username").get<std::string>();
+            std::string password = payload.at("password").get<std::string>();
+
+            // 使用 UserManager 验证密码，但登录状态保存在 ctx 中
+            auto userOpt = userMgr.findUserByUsername(username);
+            if (userOpt)
+            {
+                const auto& user = userOpt->get();
+                if (user.IsActive() && userMgr.verifyPassword(user.GetId(), password))
+                {
+                    ctx.login(user.GetId());
+                    return json{
+                        {"success", true},
+                        {"user", {
+                            {"id", user.GetId()},
+                            {"username", user.GetUsername()},
+                            {"permission", permissionToJsonString(user.GetPermission())}
+                        }}
+                    };
+                }
+            }
+            throw ApiError(401, "Invalid username or password.");
+        }
+
+        // 登出操作
+        if (action == "logout")
+        {
+            ctx.logout();
+            return json{{"success", true}};
+        }
+
+        // 获取当前用户信息
+        if (action == "current")
+        {
+            if (!ctx.isLoggedIn())
+            {
+                return json{{"logged_in", false}};
+            }
+
+            std::scoped_lock lock(ctx.mutex);
+            auto userOpt = userMgr.findUserById(*ctx.currentUserId);
+            if (userOpt)
+            {
+                const auto& user = userOpt->get();
+                return json{
+                    {"logged_in", true},
+                    {"user", {
+                        {"id", user.GetId()},
+                        {"username", user.GetUsername()},
+                        {"permission", permissionToJsonString(user.GetPermission())},
+                        {"active", user.IsActive()}
+                    }}
+                };
+            }
+            // 用户已被删除
+            ctx.logout();
+            return json{{"logged_in", false}};
+        }
+
+        // 以下操作需要登录
+        if (!ctx.isLoggedIn())
+        {
+            throw ApiError(401, "Login required.");
+        }
+
+        std::scoped_lock lock(ctx.mutex);
+
+        // 获取当前用户权限
+        auto currentUserOpt = userMgr.findUserById(*ctx.currentUserId);
+        if (!currentUserOpt)
+        {
+            ctx.logout();
+            throw ApiError(401, "Session expired. Please login again.");
+        }
+        const auto& currentUser = currentUserOpt->get();
+        bool isRoot = SSDB::hasPermission(currentUser.GetPermission(), SSDB::Permission::ROOT);
+
+        // 创建用户（需要 root 权限）
+        if (action == "create")
+        {
+            if (!isRoot)
+            {
+                throw ApiError(403, "Only root user can create new users.");
+            }
+
+            if (!payload.contains("username") || !payload.at("username").is_string())
+            {
+                throw ApiError(400, "payload.username must be string.");
+            }
+            if (!payload.contains("password") || !payload.at("password").is_string())
+            {
+                throw ApiError(400, "payload.password must be string.");
+            }
+
+            std::string username = payload.at("username").get<std::string>();
+            std::string password = payload.at("password").get<std::string>();
+
+            SSDB::Permission perm = SSDB::Permission::READ;
+            if (payload.contains("permission"))
+            {
+                perm = parsePermissionFromJson(payload.at("permission"));
+            }
+
+            try
+            {
+                // 临时登录 root 到 UserManager 来创建用户
+                userMgr.login(currentUser.GetUsername(), "");  // 已验证，跳过密码检查
+                // 直接创建，因为我们已经验证了 isRoot
+                int newId = userMgr.getNextUserId();
+                SSDB::User newUser(newId, username, userMgr.hashPassword(password), perm);
+                userMgr.addUser(newUser);
+                userMgr.commit();
+                userMgr.logout();
+
+                return json{
+                    {"success", true},
+                    {"user", {
+                        {"id", newId},
+                        {"username", username},
+                        {"permission", permissionToJsonString(perm)}
+                    }}
+                };
+            }
+            catch (const std::runtime_error& e)
+            {
+                throw ApiError(409, e.what());
+            }
+        }
+
+        // 删除用户（需要 root 权限）
+        if (action == "delete")
+        {
+            if (!isRoot)
+            {
+                throw ApiError(403, "Only root user can delete users.");
+            }
+
+            int userId = -1;
+            std::string username;
+
+            if (payload.contains("id") && payload.at("id").is_number_integer())
+            {
+                userId = payload.at("id").get<int>();
+            }
+            else if (payload.contains("username") && payload.at("username").is_string())
+            {
+                username = payload.at("username").get<std::string>();
+                auto userOpt = userMgr.findUserByUsername(username);
+                if (userOpt)
+                {
+                    userId = userOpt->get().GetId();
+                }
+            }
+            else
+            {
+                throw ApiError(400, "payload.id (integer) or payload.username (string) is required.");
+            }
+
+            if (userId < 0)
+            {
+                throw ApiError(404, "User not found.");
+            }
+
+            // 不能删除自己
+            if (userId == *ctx.currentUserId)
+            {
+                throw ApiError(400, "Cannot delete yourself.");
+            }
+
+            try
+            {
+                bool deleted = userMgr.removeUser(userId);
+                if (!deleted)
+                {
+                    throw ApiError(404, "User not found.");
+                }
+                userMgr.commit();
+                return json{{"success", true}, {"deleted", true}};
+            }
+            catch (const std::runtime_error& e)
+            {
+                throw ApiError(400, e.what());
+            }
+        }
+
+        // 更新用户（修改权限、密码、状态）
+        if (action == "update")
+        {
+            if (!payload.contains("id") || !payload.at("id").is_number_integer())
+            {
+                throw ApiError(400, "payload.id must be integer.");
+            }
+            int userId = payload.at("id").get<int>();
+
+            try
+            {
+                // 修改权限（需要 root）
+                if (payload.contains("permission"))
+                {
+                    if (!isRoot)
+                    {
+                        throw ApiError(403, "Only root user can modify permissions.");
+                    }
+                    auto perm = parsePermissionFromJson(payload.at("permission"));
+                    auto userOpt = userMgr.findUserById(userId);
+                    if (!userOpt)
+                    {
+                        throw ApiError(404, "User not found.");
+                    }
+                    // 直接修改用户权限
+                    userMgr.updateUserPermission(userId, perm);
+                }
+
+                // 修改密码
+                if (payload.contains("new_password") && payload.at("new_password").is_string())
+                {
+                    std::string newPassword = payload.at("new_password").get<std::string>();
+
+                    // 修改自己的密码需要旧密码
+                    if (userId == *ctx.currentUserId)
+                    {
+                        if (!payload.contains("old_password") || !payload.at("old_password").is_string())
+                        {
+                            throw ApiError(400, "old_password is required to change your own password.");
+                        }
+                        std::string oldPassword = payload.at("old_password").get<std::string>();
+                        if (!userMgr.verifyPassword(userId, oldPassword))
+                        {
+                            throw ApiError(401, "Old password is incorrect.");
+                        }
+                    }
+                    else if (!isRoot)
+                    {
+                        throw ApiError(403, "Only root user can change other users' passwords.");
+                    }
+
+                    userMgr.updateUserPassword(userId, newPassword);
+                }
+
+                // 修改激活状态（需要 root）
+                if (payload.contains("active") && payload.at("active").is_boolean())
+                {
+                    if (!isRoot)
+                    {
+                        throw ApiError(403, "Only root user can enable/disable users.");
+                    }
+                    if (userId == *ctx.currentUserId && !payload.at("active").get<bool>())
+                    {
+                        throw ApiError(400, "Cannot disable yourself.");
+                    }
+                    userMgr.updateUserActive(userId, payload.at("active").get<bool>());
+                }
+
+                userMgr.commit();
+                return json{{"success", true}, {"id", userId}};
+            }
+            catch (const std::runtime_error& e)
+            {
+                throw ApiError(400, e.what());
+            }
+        }
+
+        // 查询用户列表
+        if (action == "query" || action == "list")
+        {
+
+            json users = json::array();
+            for (const auto& [id, user] : userMgr.allUsers())
+            {
+                users.push_back({
+                    {"id", user.GetId()},
+                    {"username", user.GetUsername()},
+                    {"permission", permissionToJsonString(user.GetPermission())},
+                    {"active", user.IsActive()}
+                });
+            }
+            return json{{"users", users}};
+        }
+
+        throw ApiError(400, "Unsupported user action: " + actionRaw);
     }
  }

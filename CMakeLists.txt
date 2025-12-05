@@ -44,14 +44,44 @@ target_link_libraries(SecScoreDB PUBLIC
 file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
         ${PROJECT_SOURCE_DIR}/tests/*.cpp)
 
+# 排除 websocket_client_test.cpp，它会单独编译
+list(FILTER TEST_SOURCES EXCLUDE REGEX ".*websocket_client_test\\.cpp$")
+
 if (TEST_SOURCES)
-    add_executable(SecScoreDBTest ${TEST_SOURCES}
-            tests/main.cpp)
+    add_executable(SecScoreDBTest ${TEST_SOURCES})
     # 链接到我们刚刚的静态库
     target_link_libraries(SecScoreDBTest PRIVATE SecScoreDB)
     # 由于静态库已经 PUBLIC 暴露头文件，这里理论上不需要再次 include
     # 但如果以后 tests 里需要直接访问 src 下的未公开部分，可加：
     target_include_directories(SecScoreDBTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
+endif()
+
+# -------------------------------------------------------------
+# WebSocket 客户端测试程序
+# 用于测试 SecScoreDB-Websockets 服务端功能
+# 使用方法：
+#   1. 先启动服务端：./SecScoreDB-Websockets --port 8765 --db ./testdata_ws
+#   2. 再运行测试：./SecScoreDBWebsocketTest
+#
+# 注意: 如果遇到链接错误 (如 _RTC_CheckStackVars, memcpy 等未定义)，
+# 这通常是 vcpkg 库与当前编译器/运行时设置不兼容导致的。
+# 解决方法:
+#   1. 删除 cmake-build-* 目录和 vcpkg_installed 目录
+#   2. 重新运行 cmake 配置
+#   3. 确保 vcpkg triplet 匹配 (x64-windows 或 x64-windows-static)
+# -------------------------------------------------------------
+if (EXISTS "${PROJECT_SOURCE_DIR}/tests/websocket_client_test.cpp")
+    add_executable(SecScoreDBWebsocketTest
+        tests/websocket_client_test.cpp
+    )
+    target_link_libraries(SecScoreDBWebsocketTest PRIVATE
+        SecScoreDB
+        ixwebsocket::ixwebsocket
+        bcrypt  # Windows: mbedtls 依赖
+    )
+    target_include_directories(SecScoreDBWebsocketTest PRIVATE
+        ${PROJECT_SOURCE_DIR}/src
+    )
 endif()
 
 # 如果需要链接到可执行文件，应该先定义可执行文件

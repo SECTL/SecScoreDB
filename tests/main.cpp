@@ -1,6 +1,8 @@
 #include "SecScoreDB.h"
+#include "Permission.h"
 #include <array>
 #include <cassert>
+#include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <random>
@@ -14,6 +16,41 @@ static void cleanup(const std::filesystem::path& p)
     std::error_code ec;
     std::filesystem::remove_all(p, ec);
 }
+
+static void waitForUser(const std::string& message = "Press Enter to continue...")
+{
+    std::cout << "\n[PAUSE] " << message << std::endl;
+    std::cin.get();
+}
+
+// 计时辅助类
+class Timer
+{
+    using Clock = std::chrono::high_resolution_clock;
+    using TimePoint = Clock::time_point;
+
+    TimePoint start_;
+    std::string name_;
+
+public:
+    explicit Timer(std::string name) : start_(Clock::now()), name_(std::move(name)) {}
+
+    ~Timer()
+    {
+        auto end = Clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start_).count();
+        std::cout << "[TIMER] " << name_ << ": " << duration << " ms" << std::endl;
+    }
+
+    // 手动停止计时并返回毫秒数
+    long long stop()
+    {
+        auto end = Clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start_).count();
+        std::cout << "[TIMER] " << name_ << ": " << duration << " ms" << std::endl;
+        return duration;
+    }
+};
 
 namespace
 {
@@ -90,6 +127,7 @@ namespace
 
     void seedGroups(SecScoreDB& db)
     {
+        Timer timer("Seeding groups");
         logPhase("Seeding groups...");
         for (int i = 0; i < kGroupCount; ++i)
         {
@@ -103,6 +141,7 @@ namespace
 
     void seedStudents(SecScoreDB& db)
     {
+        Timer timer("Seeding students");
         logPhase("Seeding students...");
         for (int i = 0; i < kStudentCount; ++i)
         {
@@ -125,6 +164,7 @@ namespace
 
     EventStats emitEvents(SecScoreDB& db)
     {
+        Timer timer("Generating events");
         logPhase("Generating events...");
         std::mt19937 rng(42);
         std::uniform_int_distribution<int> studentOffset(0, kStudentCount - 1);
@@ -191,6 +231,7 @@ int main()
     EventStats emittedStats{};
 
     {
+        Timer phaseTimer("Phase 1 - Initial data creation");
         SecScoreDB db(dbPath);
         db.initStudentSchema(stuSchema);
         db.initGroupSchema(grpSchema);
@@ -199,13 +240,22 @@ int main()
         seedStudents(db);
         emittedStats = emitEvents(db);
 
-        db.commit();
+        {
+            Timer commitTimer("Commit to disk");
+            db.commit();
+        }
         logPhase("Initial commit complete.");
+        waitForUser("Phase 1 complete: Initial data created. Check memory usage now.");
     }
 
     {
+        Timer phaseTimer("Phase 2 - Data verification");
         logPhase("Re-opening database for verification...");
+
+        Timer loadTimer("Load database from disk");
         SecScoreDB db(dbPath);
+        loadTimer.stop();
+
         db.initStudentSchema(stuSchema);
         db.initGroupSchema(grpSchema);
 
@@ -237,10 +287,17 @@ int main()
             std::cout << "[VERIFY] Group " << gid << " verified." << std::endl;
         }
 
-        auto totalEvents = db.getEvents([](const Event&) { return true; });
-        auto erasedEvents = db.getEvents([](const Event& e) { return e.IsErased(); });
-        size_t totalCount = totalEvents.size();
-        size_t erasedCount = erasedEvents.size();
+        size_t totalCount, erasedCount;
+        {
+            Timer queryTimer("Query all events");
+            auto totalEvents = db.getEvents([](const Event&) { return true; });
+            totalCount = totalEvents.size();
+        }
+        {
+            Timer queryTimer("Query erased events");
+            auto erasedEvents = db.getEvents([](const Event& e) { return e.IsErased(); });
+            erasedCount = erasedEvents.size();
+        }
 
         std::cout << "[VERIFY] Total events stored: " << totalCount << std::endl;
         std::cout << "[VERIFY] Erased events stored: " << erasedCount << std::endl;
@@ -251,8 +308,188 @@ int main()
         assert(erasedCount == emittedStats.erasedEvents);
 
         std::cout << "[TEST] Verification completed successfully." << std::endl;
+        waitForUser("Phase 2 complete: Data verification done. Check memory usage now.");
+    }
+
+    // ============================================================
+    // 用户权限系统测试
+    // ============================================================
+    const std::filesystem::path authDbPath{"./testdata_auth"};
+    cleanup(authDbPath);
+
+    {
+        logPhase("Testing user authentication and permissions...");
+
+        SecScoreDB db(authDbPath);
+        db.initStudentSchema(stuSchema);
+        db.initGroupSchema(grpSchema);
+
+        // 测试1: 未登录状态
+        logPhase("Test 1: Check not logged in initially");
+        assert(!db.isLoggedIn());
+        assert(!db.checkPermission(Permission::READ));
+        std::cout << "[PASS] Not logged in initially" << std::endl;
+
+        // 测试2: 使用默认 root 账户登录
+        logPhase("Test 2: Login with default root account");
+        bool loginSuccess = db.login("root", "root");
+        assert(loginSuccess);
+        assert(db.isLoggedIn());
+        assert(db.checkPermission(Permission::ROOT));
+        assert(db.checkPermission(Permission::READ));
+        assert(db.checkPermission(Permission::WRITE));
+        assert(db.checkPermission(Permission::DELETE));
+        std::cout << "[PASS] Root login successful with all permissions" << std::endl;
+
+        // 测试3: 创建用户（需要 root 权限）
+        logPhase("Test 3: Create users with different permissions");
+        auto& userMgr = db.userManager();
+
+        // 创建只读用户
+        User& readOnlyUser = userMgr.createUser("reader", "reader123", Permission::READ);
+        assert(readOnlyUser.GetUsername() == "reader");
+        assert(readOnlyUser.canRead());
+        assert(!readOnlyUser.canWrite());
+        assert(!readOnlyUser.canDelete());
+        std::cout << "[PASS] Created read-only user" << std::endl;
+
+        // 创建读写用户
+        User& readWriteUser = userMgr.createUser("editor", "editor123", Permission::READ | Permission::WRITE);
+        assert(readWriteUser.canRead());
+        assert(readWriteUser.canWrite());
+        assert(!readWriteUser.canDelete());
+        std::cout << "[PASS] Created read-write user" << std::endl;
+
+        // 创建全权限用户
+        User& adminUser = userMgr.createUser("admin", "admin123", Permission::ROOT);
+        assert(adminUser.isRoot());
+        std::cout << "[PASS] Created admin user with ROOT permission" << std::endl;
+
+        // 测试4: 登出
+        logPhase("Test 4: Logout");
+        db.logout();
+        assert(!db.isLoggedIn());
+        std::cout << "[PASS] Logout successful" << std::endl;
+
+        // 测试5: 错误密码登录
+        logPhase("Test 5: Login with wrong password");
+        bool wrongLogin = db.login("reader", "wrongpassword");
+        assert(!wrongLogin);
+        assert(!db.isLoggedIn());
+        std::cout << "[PASS] Wrong password rejected" << std::endl;
+        waitForUser("Phase 3a complete: Basic auth tests (1-5) done.");
+
+        // 测试6: 只读用户登录并检查权限
+        logPhase("Test 6: Read-only user permissions");
+        assert(db.login("reader", "reader123"));
+        assert(db.isLoggedIn());
+        assert(db.checkPermission(Permission::READ));
+        assert(!db.checkPermission(Permission::WRITE));
+        assert(!db.checkPermission(Permission::DELETE));
+        std::cout << "[PASS] Read-only user has correct permissions" << std::endl;
+
+        // 测试7: 只读用户尝试创建用户（应该失败）
+        logPhase("Test 7: Read-only user cannot create users");
+        bool exceptionThrown = false;
+        try {
+            userMgr.createUser("hacker", "hack123", Permission::ROOT);
+        } catch (const PermissionDeniedException& e) {
+            exceptionThrown = true;
+            std::cout << "[EXPECTED] " << e.what() << std::endl;
+        }
+        assert(exceptionThrown);
+        std::cout << "[PASS] Read-only user cannot create users" << std::endl;
+
+        // 测试8: 读写用户登录
+        logPhase("Test 8: Read-write user permissions");
+        db.logout();
+        assert(db.login("editor", "editor123"));
+        assert(db.checkPermission(Permission::READ));
+        assert(db.checkPermission(Permission::WRITE));
+        assert(!db.checkPermission(Permission::DELETE));
+        std::cout << "[PASS] Read-write user has correct permissions" << std::endl;
+
+        // 测试9: requirePermission 测试
+        logPhase("Test 9: requirePermission throws on missing permission");
+        exceptionThrown = false;
+        try {
+            db.requirePermission(Permission::DELETE, "delete student");
+        } catch (const PermissionDeniedException& e) {
+            exceptionThrown = true;
+            std::cout << "[EXPECTED] " << e.what() << std::endl;
+        }
+        assert(exceptionThrown);
+        std::cout << "[PASS] requirePermission correctly throws exception" << std::endl;
+
+        // 测试10: 权限组合测试
+        logPhase("Test 10: Permission combination");
+        Permission combined = Permission::READ | Permission::DELETE;
+        assert(hasPermission(combined, Permission::READ));
+        assert(!hasPermission(combined, Permission::WRITE));
+        assert(hasPermission(combined, Permission::DELETE));
+        std::cout << "[PASS] Permission combination works correctly" << std::endl;
+        waitForUser("Phase 3b complete: Permission tests (6-10) done.");
+
+        // 测试11: 修改用户权限（需要 root）
+        logPhase("Test 11: Modify user permission (requires root)");
+        db.logout();
+        assert(db.login("admin", "admin123"));
+        int editorId = readWriteUser.GetId();
+        userMgr.setUserPermission(editorId, Permission::ROOT);
+        auto editorOpt = userMgr.getUser(editorId);
+        assert(editorOpt.has_value());
+        assert(editorOpt->get().isRoot());
+        std::cout << "[PASS] User permission modified successfully" << std::endl;
+
+        // 测试12: 删除用户
+        logPhase("Test 12: Delete user");
+        int readerId = readOnlyUser.GetId();
+        bool deleted = userMgr.deleteUser(readerId);
+        assert(deleted);
+        assert(!userMgr.hasUser(readerId));
+        assert(!userMgr.hasUser("reader"));
+        std::cout << "[PASS] User deleted successfully" << std::endl;
+
+        // 测试13: 修改密码
+        logPhase("Test 13: Change password");
+        db.logout();
+        assert(db.login("editor", "editor123"));
+        userMgr.changePassword(editorId, "newpassword", "editor123");
+        db.logout();
+        assert(!db.login("editor", "editor123"));  // 旧密码失败
+        assert(db.login("editor", "newpassword"));  // 新密码成功
+        std::cout << "[PASS] Password changed successfully" << std::endl;
+
+        // 测试14: 禁用用户
+        logPhase("Test 14: Disable user");
+        db.logout();
+        assert(db.login("admin", "admin123"));
+        userMgr.setUserActive(editorId, false);
+        db.logout();
+        assert(!db.login("editor", "newpassword"));  // 禁用后无法登录
+        std::cout << "[PASS] Disabled user cannot login" << std::endl;
+        waitForUser("Phase 3c complete: User management tests (11-14) done.");
+
+        // 测试15: 持久化测试
+        logPhase("Test 15: User persistence");
+        db.commit();
+    }  // db 在这里析构，确保文件完全写入
+
+    waitForUser("Phase 3d: Database closed. About to test persistence...");
+
+    // 重新打开数据库验证持久化
+    {
+        SecScoreDB db2(authDbPath);
+        assert(db2.login("admin", "admin123"));
+        assert(db2.userManager().hasUser("admin"));
+        assert(!db2.userManager().hasUser("reader"));  // 已删除
+        std::cout << "[PASS] User data persisted correctly" << std::endl;
+
+        logPhase("All user authentication tests passed!");
     }
 
     std::cout << "[TEST] SecScoreDB stress test finished" << std::endl;
+    waitForUser("All tests complete! Check final memory usage.");
+
     return 0;
 }
