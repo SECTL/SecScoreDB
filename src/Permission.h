@@ -1,4 +1,10 @@
 ﻿#pragma once
+
+// Windows 头文件定义了 DELETE 宏，需要取消以避免冲突
+#ifdef DELETE
+#undef DELETE
+#endif
+
 #include <cstdint>
 #include <string>
 #include <vector>

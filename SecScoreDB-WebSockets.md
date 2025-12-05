@@ -1,4 +1,4 @@
-# SecScoreDB WebSocket 通信协议规范 v1.1
+# SecScoreDB WebSocket 通信协议规范 v1.2
 
 ## 服务端启动说明
 
@@ -14,10 +14,14 @@ cmake --build . --target SecScoreDB-Websockets
 ./SecScoreDB-Websockets --port 9000 --db ./data
 ```
 
-服务端遵循本协议，所有请求和响应均采用 JSON。若请求解析失败或未通过验证，服务端会返回 `status="error"`，并根据情况设置 `code`（如 400、422、500 等）。
+服务端遵循本协议，所有请求和响应均采用 JSON。若请求解析失败或未通过验证，服务端会返回 `status="error"`，并根据情况设置 `code`（如 400、401、403、422、500 等）。
 
-> **版本**: 1.1
-> **变更**: 新增对字符串字段的模糊搜索支持 (`contains`, `starts_with`, `ends_with`)。
+> **版本**: 1.2  
+> **变更**:
+> - v1.2: 新增用户认证与权限管理 (`category: "user"`)，支持 `login`, `logout`, `create`, `delete`, `update`, `query` 操作
+> - v1.2: 新增权限类型: `read`, `write`, `delete`, `root`  
+> - v1.2: 新增状态码 401 (未授权) 和 403 (权限不足)
+> - v1.1: 新增对字符串字段的模糊搜索支持 (`contains`, `starts_with`, `ends_with`)
 
 ---
 
@@ -27,6 +31,7 @@ cmake --build . --target SecScoreDB-Websockets
 * **编码格式**: JSON (UTF-8)
 * **交互模式**: 全双工异步通信 (Request-Response)。
 * **并发控制**: 客户端必须为每个请求生成唯一的序列号 (`seq`)。服务端保证在响应中原样返回该序列号，以便客户端将响应与请求进行匹配。
+* **认证机制**: 首次启动时会自动创建默认 root 用户 (用户名: `root`, 密码: `root`)。建议立即修改默认密码。
 
 ---
 
@@ -39,8 +44,8 @@ cmake --build . --target SecScoreDB-Websockets
 | 字段 | 类型 | 必填 | 说明 |
 | :--- | :--- | :--- | :--- |
 | **`seq`** | String | 是 | 请求唯一标识符 (如 UUID)。 |
-| **`category`** | String | 是 | 目标资源分类: `"system"`, `"student"`, `"group"`, `"event"`. |
-| **`action`** | String | 是 | 操作动作: `"define"`, `"create"`, `"query"`, `"update"`, `"delete"`. |
+| **`category`** | String | 是 | 目标资源分类: `"system"`, `"student"`, `"group"`, `"event"`, `"user"`. |
+| **`action`** | String | 是 | 操作动作: `"define"`, `"create"`, `"query"`, `"update"`, `"delete"`, `"login"`, `"logout"`. |
 | **`payload`** | Object | 是 | 具体操作参数。 |
 
 ```json
@@ -355,12 +360,265 @@ cmake --build . --target SecScoreDB-Websockets
 
 ---
 
-## 6. 状态码定义 (Status Codes)
+## 6. 用户认证操作 (`category: "user"`)
+
+### 6.1 用户登录 (Login)
+
+验证用户凭据并建立会话。
+
+* **Action**: `login`
+* **Payload**:
+  * `username`: 用户名 (String)
+  * `password`: 密码 (String)
+
+**请求示例:**
+
+```json
+{
+    "seq": "auth-001",
+    "category": "user",
+    "action": "login",
+    "payload": {
+        "username": "root",
+        "password": "root"
+    }
+}
+```
+
+**成功响应:**
+
+```json
+{
+    "seq": "auth-001",
+    "status": "ok",
+    "code": 200,
+    "data": {
+        "success": true,
+        "user": {
+            "id": 1,
+            "username": "root",
+            "permission": "root"
+        }
+    }
+}
+```
+
+**失败响应:**
+
+```json
+{
+    "seq": "auth-001",
+    "status": "error",
+    "code": 401,
+    "message": "Invalid username or password."
+}
+```
+
+### 6.2 用户登出 (Logout)
+
+结束当前用户会话。
+
+* **Action**: `logout`
+* **Payload**: `{}`
+
+**请求示例:**
+
+```json
+{
+    "category": "user",
+    "action": "logout",
+    "payload": {}
+}
+```
+
+### 6.3 获取当前用户 (Current)
+
+获取当前登录用户的信息。
+
+* **Action**: `current`
+* **Payload**: `{}`
+
+**响应示例 (已登录):**
+
+```json
+{
+    "logged_in": true,
+    "user": {
+        "id": 1,
+        "username": "admin",
+        "permission": "root",
+        "active": true
+    }
+}
+```
+
+**响应示例 (未登录):**
+
+```json
+{
+    "logged_in": false
+}
+```
+
+### 6.4 创建用户 (Create) - 需要 root 权限
+
+创建新用户。
+
+* **Action**: `create`
+* **Payload**:
+  * `username`: 用户名 (String)
+  * `password`: 密码 (String)
+  * `permission`: 权限 (可选, String 或 Array)
+
+**权限值说明:**
+
+| 值 | 说明 |
+| :--- | :--- |
+| `"none"` | 无权限 |
+| `"read"` | 只读权限 |
+| `"write"` | 写入权限 |
+| `"delete"` | 删除权限 |
+| `"root"` | 全部权限 (包括用户管理) |
+| `"read,write"` | 读写权限 (组合) |
+| `["read", "write"]` | 数组形式的权限组合 |
+
+**请求示例:**
+
+```json
+{
+    "category": "user",
+    "action": "create",
+    "payload": {
+        "username": "teacher1",
+        "password": "secure123",
+        "permission": "read,write"
+    }
+}
+```
+
+**响应示例:**
+
+```json
+{
+    "success": true,
+    "user": {
+        "id": 2,
+        "username": "teacher1",
+        "permission": "read,write"
+    }
+}
+```
+
+### 6.5 删除用户 (Delete) - 需要 root 权限
+
+删除指定用户。
+
+* **Action**: `delete`
+* **Payload**:
+  * `id`: 用户 ID (Integer) **或**
+  * `username`: 用户名 (String)
+
+**请求示例:**
+
+```json
+{
+    "category": "user",
+    "action": "delete",
+    "payload": { "username": "teacher1" }
+}
+```
+
+### 6.6 更新用户 (Update) - 需要 root 权限
+
+修改用户的权限、密码或激活状态。
+
+* **Action**: `update`
+* **Payload**:
+  * `id`: 目标用户 ID (Integer, 必填)
+  * `permission`: 新权限 (可选)
+  * `new_password`: 新密码 (可选)
+  * `old_password`: 旧密码 (修改自己密码时需要)
+  * `active`: 激活状态 (可选, Boolean)
+
+**请求示例 (修改权限):**
+
+```json
+{
+    "category": "user",
+    "action": "update",
+    "payload": {
+        "id": 2,
+        "permission": "root"
+    }
+}
+```
+
+**请求示例 (修改密码):**
+
+```json
+{
+    "category": "user",
+    "action": "update",
+    "payload": {
+        "id": 2,
+        "new_password": "newSecurePass",
+        "old_password": "oldPassword"
+    }
+}
+```
+
+**请求示例 (禁用用户):**
+
+```json
+{
+    "category": "user",
+    "action": "update",
+    "payload": {
+        "id": 2,
+        "active": false
+    }
+}
+```
+
+### 6.7 查询用户列表 (Query) - 需要登录
+
+获取所有用户列表。
+
+* **Action**: `query` 或 `list`
+* **Payload**: `{}`
+
+**响应示例:**
+
+```json
+{
+    "users": [
+        {
+            "id": 1,
+            "username": "root",
+            "permission": "root",
+            "active": true
+        },
+        {
+            "id": 2,
+            "username": "teacher1",
+            "permission": "read,write",
+            "active": true
+        }
+    ]
+}
+```
+
+---
+
+## 7. 状态码定义 (Status Codes)
 
 | 代码 | 状态 | 说明 |
 | :--- | :--- | :--- |
 | **200** | OK | 请求处理成功。 |
 | **400** | Bad Request | JSON 格式错误、缺少必填字段或不支持的 Action。 |
+| **401** | Unauthorized | 未登录或登录凭据无效。 |
+| **403** | Forbidden | 权限不足，无法执行该操作。 |
 | **404** | Not Found | 目标资源 ID 不存在。 |
+| **409** | Conflict | 资源冲突 (如用户名已存在)。 |
 | **422** | Unprocessable | 逻辑错误 (如对 Int 字段使用 `contains`，或自动创建时 ID 不为 null)。 |
 | **500** | Internal Error | 服务端内部异常或存储失败。 |

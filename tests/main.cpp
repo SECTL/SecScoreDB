@@ -2,6 +2,7 @@
 #include "Permission.h"
 #include <array>
 #include <cassert>
+#include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <random>
@@ -21,6 +22,35 @@ static void waitForUser(const std::string& message = "Press Enter to continue...
     std::cout << "\n[PAUSE] " << message << std::endl;
     std::cin.get();
 }
+
+// 计时辅助类
+class Timer
+{
+    using Clock = std::chrono::high_resolution_clock;
+    using TimePoint = Clock::time_point;
+
+    TimePoint start_;
+    std::string name_;
+
+public:
+    explicit Timer(std::string name) : start_(Clock::now()), name_(std::move(name)) {}
+
+    ~Timer()
+    {
+        auto end = Clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start_).count();
+        std::cout << "[TIMER] " << name_ << ": " << duration << " ms" << std::endl;
+    }
+
+    // 手动停止计时并返回毫秒数
+    long long stop()
+    {
+        auto end = Clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start_).count();
+        std::cout << "[TIMER] " << name_ << ": " << duration << " ms" << std::endl;
+        return duration;
+    }
+};
 
 namespace
 {
@@ -97,6 +127,7 @@ namespace
 
     void seedGroups(SecScoreDB& db)
     {
+        Timer timer("Seeding groups");
         logPhase("Seeding groups...");
         for (int i = 0; i < kGroupCount; ++i)
         {
@@ -110,6 +141,7 @@ namespace
 
     void seedStudents(SecScoreDB& db)
     {
+        Timer timer("Seeding students");
         logPhase("Seeding students...");
         for (int i = 0; i < kStudentCount; ++i)
         {
@@ -132,6 +164,7 @@ namespace
 
     EventStats emitEvents(SecScoreDB& db)
     {
+        Timer timer("Generating events");
         logPhase("Generating events...");
         std::mt19937 rng(42);
         std::uniform_int_distribution<int> studentOffset(0, kStudentCount - 1);
@@ -198,6 +231,7 @@ int main()
     EventStats emittedStats{};
 
     {
+        Timer phaseTimer("Phase 1 - Initial data creation");
         SecScoreDB db(dbPath);
         db.initStudentSchema(stuSchema);
         db.initGroupSchema(grpSchema);
@@ -206,14 +240,22 @@ int main()
         seedStudents(db);
         emittedStats = emitEvents(db);
 
-        db.commit();
+        {
+            Timer commitTimer("Commit to disk");
+            db.commit();
+        }
         logPhase("Initial commit complete.");
         waitForUser("Phase 1 complete: Initial data created. Check memory usage now.");
     }
 
     {
+        Timer phaseTimer("Phase 2 - Data verification");
         logPhase("Re-opening database for verification...");
+
+        Timer loadTimer("Load database from disk");
         SecScoreDB db(dbPath);
+        loadTimer.stop();
+
         db.initStudentSchema(stuSchema);
         db.initGroupSchema(grpSchema);
 
@@ -245,10 +287,17 @@ int main()
             std::cout << "[VERIFY] Group " << gid << " verified." << std::endl;
         }
 
-        auto totalEvents = db.getEvents([](const Event&) { return true; });
-        auto erasedEvents = db.getEvents([](const Event& e) { return e.IsErased(); });
-        size_t totalCount = totalEvents.size();
-        size_t erasedCount = erasedEvents.size();
+        size_t totalCount, erasedCount;
+        {
+            Timer queryTimer("Query all events");
+            auto totalEvents = db.getEvents([](const Event&) { return true; });
+            totalCount = totalEvents.size();
+        }
+        {
+            Timer queryTimer("Query erased events");
+            auto erasedEvents = db.getEvents([](const Event& e) { return e.IsErased(); });
+            erasedCount = erasedEvents.size();
+        }
 
         std::cout << "[VERIFY] Total events stored: " << totalCount << std::endl;
         std::cout << "[VERIFY] Erased events stored: " << erasedCount << std::endl;

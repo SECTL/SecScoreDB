@@ -16,9 +16,9 @@ namespace SSDB
     {
     public:
         PermissionDeniedException(const std::string& operation, Permission required)
-            : std::runtime_error(std::format(
-                "Permission denied: Operation '{}' requires {} permission.",
-                operation, permissionToString(required))) {}
+            : std::runtime_error(
+                "Permission denied: Operation '" + operation + "' requires " +
+                permissionToString(required) + " permission.") {}
 
         PermissionDeniedException(const std::string& msg)
             : std::runtime_error(msg) {}
@@ -214,7 +214,7 @@ namespace SSDB
             // 检查用户名是否已存在
             if (usernameIndex.contains(username))
             {
-                throw std::runtime_error(std::format("Username '{}' already exists.", username));
+                throw std::runtime_error("Username '" + username + "' already exists.");
             }
 
             int newId = ++_max_user_id;
@@ -273,7 +273,7 @@ namespace SSDB
             auto it = users.find(userId);
             if (it == users.end())
             {
-                throw std::runtime_error(std::format("User ID {} not found.", userId));
+                throw std::runtime_error("User ID " + std::to_string(userId) + " not found.");
             }
 
             it->second.SetPermission(perm);
@@ -290,7 +290,7 @@ namespace SSDB
             auto it = users.find(userId);
             if (it == users.end())
             {
-                throw std::runtime_error(std::format("User ID {} not found.", userId));
+                throw std::runtime_error("User ID " + std::to_string(userId) + " not found.");
             }
 
             // 修改自己的密码需要验证旧密码
@@ -328,7 +328,7 @@ namespace SSDB
             auto it = users.find(userId);
             if (it == users.end())
             {
-                throw std::runtime_error(std::format("User ID {} not found.", userId));
+                throw std::runtime_error("User ID " + std::to_string(userId) + " not found.");
             }
 
             it->second.SetActive(active);
