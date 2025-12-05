@@ -93,10 +93,15 @@ namespace SSDB
                  std::cerr << "[DB Save Error] " << filePath << ": " << e.what() << std::endl;
             }
 
-                       File.open(filePath, std::ios::in | std::ios::out | std::ios::binary);
+            // 4. 刷新并关闭文件确保数据写入磁盘
+            File.flush();
+            File.close();
+
+            // 5. 重新以读写模式打开
+            File.open(filePath, std::ios::in | std::ios::out | std::ios::binary);
             if (!File.is_open()) {
                 throw std::runtime_error("Failed to reopen file in read-write mode: " + filePath.string());
-            }        File.open(filePath, std::ios::in | std::ios::out | std::ios::binary);
+            }
         }
     };
 }
