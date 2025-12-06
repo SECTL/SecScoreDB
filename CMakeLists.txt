@@ -135,14 +135,16 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/wrappers/websockets/main.cpp")
 endif()
 
 # ============================================================
-# GoogleTest 单元测试
+# GoogleTest 单元测试（不包含 E2E 测试）
 # ============================================================
-file(GLOB_RECURSE UNIT_TEST_SOURCES CONFIGURE_DEPENDS
+file(GLOB UNIT_TEST_SOURCES CONFIGURE_DEPENDS
     ${PROJECT_SOURCE_DIR}/tests/unit/*.cpp
 )
 
+# 排除 E2E 测试文件
+list(FILTER UNIT_TEST_SOURCES EXCLUDE REGEX ".*_e2e_test\\.cpp$")
+
 if(UNIT_TEST_SOURCES)
-    # 添加 WebSocket 模块源文件用于测试
     add_executable(SecScoreDB_UnitTests
         ${UNIT_TEST_SOURCES}
         wrappers/websockets/Protocol.cpp
@@ -158,7 +160,6 @@ if(UNIT_TEST_SOURCES)
         ixwebsocket::ixwebsocket
     )
 
-    # Windows: mbedtls 依赖 bcrypt
     if(WIN32)
         target_link_libraries(SecScoreDB_UnitTests PRIVATE bcrypt)
     endif()
@@ -168,12 +169,50 @@ if(UNIT_TEST_SOURCES)
         ${PROJECT_SOURCE_DIR}/wrappers/websockets
     )
 
-    # 注册到 CTest
     include(GoogleTest)
     gtest_discover_tests(SecScoreDB_UnitTests
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         PROPERTIES
             LABELS "unit"
+    )
+endif()
+
+# ============================================================
+# GoogleTest 端到端测试（WebSocket E2E）
+# 需要 WebSocket 服务器运行才能执行
+# ============================================================
+if(EXISTS "${PROJECT_SOURCE_DIR}/tests/unit/websocket_e2e_test.cpp")
+    add_executable(SecScoreDB_E2ETests
+        tests/unit/websocket_e2e_test.cpp
+    )
+
+    target_link_libraries(SecScoreDB_E2ETests PRIVATE
+        SecScoreDB
+        GTest::gtest
+        GTest::gtest_main
+        ixwebsocket::ixwebsocket
+    )
+
+    if(WIN32)
+        target_link_libraries(SecScoreDB_E2ETests PRIVATE bcrypt)
+    endif()
+
+    target_include_directories(SecScoreDB_E2ETests PRIVATE
+        ${PROJECT_SOURCE_DIR}/src
+        ${PROJECT_SOURCE_DIR}/wrappers/websockets
+    )
+
+    # E2E 测试需要服务器运行，所以不自动发现测试
+    # 手动添加一个测试，用户可以选择性运行
+    add_test(
+        NAME WebSocketE2ETests
+        COMMAND SecScoreDB_E2ETests
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    )
+    set_tests_properties(WebSocketE2ETests PROPERTIES
+        LABELS "e2e;websocket"
+        # 默认禁用，需要手动运行
+        DISABLED TRUE
     )
 endif()
 
