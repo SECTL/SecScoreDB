@@ -6,6 +6,7 @@
 
 - `--port <number>`：监听的 WebSocket 端口，默认 `8765`。
 - `--db <path>`：数据库根目录，默认当前工作目录下的 `data` 目录。
+- `--path <uri>`：WebSocket 端点路径，默认 `/`。路径会自动规范化（确保以 `/` 开头）。
 - `--help` 或 `-h`：显示帮助信息。
 
 示例：
@@ -15,9 +16,14 @@
 cmake --preset windows-debug
 cmake --build build/windows-debug
 
-# 启动服务器
+# 启动服务器（默认路径 /）
 ./build/windows-debug/SecScoreDB-Websockets --port 8765 --db ./data
+
+# 启动服务器（自定义路径 /api/v1）
+./build/windows-debug/SecScoreDB-Websockets --port 8765 --db ./data --path /api/v1
 ```
+
+使用自定义路径时，客户端需要连接到对应的 URL，例如 `ws://localhost:8765/api/v1`。连接到其他路径的客户端会被拒绝（返回关闭码 4404）。
 
 ## 测试说明
 

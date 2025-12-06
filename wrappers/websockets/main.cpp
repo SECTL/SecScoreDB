@@ -26,10 +26,39 @@ namespace
      */
     void printUsage(const char* programName)
     {
-        std::cerr << "Usage: " << programName << " [--port <number>] [--db <path>]\n"
+        std::cerr << "Usage: " << programName << " [--port <number>] [--db <path>] [--path <uri>]\n"
                   << "Options:\n"
                   << "  --port <number>  WebSocket server port (default: 8765)\n"
-                  << "  --db <path>      Database directory path (default: ./data)\n";
+                  << "  --db <path>      Database directory path (default: ./data)\n"
+                  << "  --path <uri>     WebSocket endpoint path (default: /)\n";
+    }
+
+    /**
+     * @brief 规范化 URI 路径
+     * 确保路径以 / 开头，移除尾部 /（除非是根路径）
+     */
+    std::string normalizePath(const std::string& path)
+    {
+        if (path.empty())
+        {
+            return "/";
+        }
+
+        std::string result = path;
+
+        // 确保以 / 开头
+        if (result[0] != '/')
+        {
+            result = "/" + result;
+        }
+
+        // 移除尾部 /（除非是根路径）
+        while (result.size() > 1 && result.back() == '/')
+        {
+            result.pop_back();
+        }
+
+        return result;
     }
 }
 
@@ -39,6 +68,7 @@ int main(int argc, char** argv)
     {
         std::uint16_t port = 8765;
         std::filesystem::path dbPath = std::filesystem::current_path() / "data";
+        std::string wsPath = "/";
 
         // 解析命令行参数
         for (int i = 1; i < argc; ++i)
@@ -54,6 +84,12 @@ int main(int argc, char** argv)
             if (arg == "--db" && i + 1 < argc)
             {
                 dbPath = std::filesystem::path(argv[++i]);
+                continue;
+            }
+
+            if (arg == "--path" && i + 1 < argc)
+            {
+                wsPath = normalizePath(argv[++i]);
                 continue;
             }
 
@@ -83,11 +119,28 @@ int main(int argc, char** argv)
         ix::WebSocketServer server(port);
 
         server.setOnClientMessageCallback(
-            [&](std::shared_ptr<ix::ConnectionState> connState,
+            [&, wsPath](std::shared_ptr<ix::ConnectionState> connState,
                 ix::WebSocket& connection,
                 const ix::WebSocketMessagePtr& msg)
         {
             const std::string connId = connState->getId();
+
+            // 处理连接打开，验证路径
+            if (msg->type == ix::WebSocketMessageType::Open)
+            {
+                std::string requestPath = normalizePath(msg->openInfo.uri);
+                if (requestPath != wsPath)
+                {
+                    std::cout << "[DEBUG] Connection " << connId
+                              << " rejected: path mismatch (expected: " << wsPath
+                              << ", got: " << requestPath << ")\n";
+                    connection.close(4404, "Path not found");
+                    return;
+                }
+                std::cout << "[DEBUG] Connection " << connId
+                          << " accepted on path: " << requestPath << '\n';
+                return;
+            }
 
             // 处理连接关闭
             if (msg->type == ix::WebSocketMessageType::Close)
@@ -198,7 +251,7 @@ int main(int argc, char** argv)
             return 1;
         }
 
-        std::cout << "SecScoreDB WebSocket server listening on ws://0.0.0.0:" << port
+        std::cout << "SecScoreDB WebSocket server listening on ws://0.0.0.0:" << port << wsPath
                   << "\nDatabase directory: " << dbPath.string() << '\n';
 
         server.wait();
