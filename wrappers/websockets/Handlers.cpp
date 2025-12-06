@@ -1,23 +1,33 @@
+/**
+ * @file Handlers.cpp
+ * @brief WebSocket API 处理器实现
+ */
 #include "Handlers.hpp"
-
-#include <cmath>
-#include <limits>
-#include <chrono>
 
 #include "JsonUtils.hpp"
 #include "Permission.h"
 #include "UserManager.h"
 
+#include <chrono>
+#include <cmath>
+#include <format>
+#include <limits>
+#include <string>
+
 using nlohmann::json;
 
 namespace ws
 {
+    // ============================================================
+    // 通用 CRUD 模板
+    // ============================================================
+
     template <typename WrapperFactory, typename CleanupFn, typename AllocFn>
-    json handleCreate(const json& payload,
-                      const SSDB::SchemaDef& schema,
-                      WrapperFactory&& factory,
-                      CleanupFn&& cleanup,
-                      AllocFn&& allocator)
+    [[nodiscard]] json handleCreate(const json& payload,
+                                    const SSDB::SchemaDef& schema,
+                                    WrapperFactory&& factory,
+                                    CleanupFn&& cleanup,
+                                    AllocFn&& allocator)
     {
         ensureSchemaReady(schema, "entity");
         if (!payload.contains("items") || !payload.at("items").is_array())
@@ -81,9 +91,9 @@ namespace ws
     }
 
     template <typename MapType>
-    json handleQuery(const json& payload,
-                     const MapType& entities,
-                     const SSDB::SchemaDef& schema)
+    [[nodiscard]] json handleQuery(const json& payload,
+                                   const MapType& entities,
+                                   const SSDB::SchemaDef& schema)
     {
         ensureSchemaReady(schema, "entity");
         size_t limit = std::numeric_limits<size_t>::max();
@@ -127,9 +137,9 @@ namespace ws
     }
 
     template <typename WrapperFetcher>
-    json handleUpdate(const json& payload,
-                      const SSDB::SchemaDef& schema,
-                      WrapperFetcher&& fetcher)
+    [[nodiscard]] json handleUpdate(const json& payload,
+                                    const SSDB::SchemaDef& schema,
+                                    WrapperFetcher&& fetcher)
     {
         ensureSchemaReady(schema, "entity");
         if (!payload.contains("id") || !payload.at("id").is_number_integer())
@@ -147,9 +157,9 @@ namespace ws
     }
 
     template <typename DeleteFn>
-    json handleDelete(const json& payload,
-                      std::string_view targetName,
-                      DeleteFn&& deleter)
+    [[nodiscard]] json handleDelete(const json& payload,
+                                    std::string_view targetName,
+                                    DeleteFn&& deleter)
     {
         if (!payload.contains("id") || !payload.at("id").is_number_integer())
         {
@@ -163,28 +173,35 @@ namespace ws
         return json{{"id", id}, {"deleted", true}};
     }
 
-    SSDB::EventType parseEventType(int type)
+    [[nodiscard]] SSDB::EventType parseEventType(int type)
     {
         if (type == 1) return SSDB::EventType::Student;
         if (type == 2) return SSDB::EventType::Group;
         throw ApiError(422, "event.type must be 1 (student) or 2 (group).");
     }
 
-    json handleSystem(const std::string& actionRaw,
+    // ============================================================
+    // System 处理器
+    // ============================================================
+
+    json handleSystem(std::string_view action,
                       const json& payload,
                       RequestContext& ctx)
     {
-        auto action = toLowerCopy(actionRaw);
-        if (action == "commit")
+        const auto actionLower = toLowerCopy(action);
+
+        if (actionLower == "commit")
         {
             std::scoped_lock lock(ctx.mutex);
             ctx.db.commit();
             return json{{"committed", true}};
         }
-        if (action != "define")
+
+        if (actionLower != "define")
         {
-            throw ApiError(400, "Unsupported system action: " + actionRaw);
+            throw ApiError(400, std::format("Unsupported system action: {}", action));
         }
+
         if (!payload.contains("target") || !payload.at("target").is_string())
         {
             throw ApiError(400, "payload.target must be string.");
@@ -194,9 +211,11 @@ namespace ws
             throw ApiError(400, "payload.schema is required.");
         }
 
-        auto target = toLowerCopy(payload.at("target").get<std::string>());
+        const auto target = toLowerCopy(payload.at("target").get<std::string>());
         auto schema = parseSchema(payload.at("schema"));
+
         std::scoped_lock lock(ctx.mutex);
+
         if (target == "student")
         {
             ctx.db.initStudentSchema(schema);
@@ -209,91 +228,119 @@ namespace ws
         {
             throw ApiError(400, "target must be 'student' or 'group'.");
         }
+
         return json{{"target", target}, {"fields", schema.size()}};
     }
 
-    json handleStudent(const std::string& actionRaw,
+    // ============================================================
+    // Student 处理器
+    // ============================================================
+
+    json handleStudent(std::string_view action,
                        const json& payload,
                        RequestContext& ctx)
     {
         std::scoped_lock lock(ctx.mutex);
         const auto& schema = ctx.db.studentSchema();
-        auto action = toLowerCopy(actionRaw);
-        if (action == "create")
+        const auto actionLower = toLowerCopy(action);
+        if (actionLower == "create")
         {
             auto result = handleCreate(payload, schema,
                 [&](int id) { return ctx.db.createStudent(id); },
                 [&](int id) { ctx.db.deleteStudent(id); },
                 [&]() { return ctx.db.allocateStudentId(); });
-            if (result.at("count").get<size_t>() > 0)
+
+            if (result.at("count").get<std::size_t>() > 0)
             {
                 ctx.db.commit();
             }
             return result;
         }
-        if (action == "query")
+
+        if (actionLower == "query")
         {
             return handleQuery(payload, ctx.db.students(), schema);
         }
-        if (action == "update")
+
+        if (actionLower == "update")
         {
-            auto result = handleUpdate(payload, schema, [&](int id) { return ctx.db.getStudent(id); });
+            auto result = handleUpdate(payload, schema,
+                [&](int id) { return ctx.db.getStudent(id); });
             ctx.db.commit();
             return result;
         }
-        if (action == "delete")
+
+        if (actionLower == "delete")
         {
-            auto result = handleDelete(payload, "student", [&](int id) { return ctx.db.deleteStudent(id); });
+            auto result = handleDelete(payload, "student",
+                [&](int id) { return ctx.db.deleteStudent(id); });
             ctx.db.commit();
             return result;
         }
-        throw ApiError(400, "Unsupported student action: " + actionRaw);
+
+        throw ApiError(400, std::format("Unsupported student action: {}", action));
     }
 
-    json handleGroup(const std::string& actionRaw,
+    // ============================================================
+    // Group 处理器
+    // ============================================================
+
+    json handleGroup(std::string_view action,
                      const json& payload,
                      RequestContext& ctx)
     {
         std::scoped_lock lock(ctx.mutex);
         const auto& schema = ctx.db.groupSchema();
-        auto action = toLowerCopy(actionRaw);
-        if (action == "create")
+        const auto actionLower = toLowerCopy(action);
+
+        if (actionLower == "create")
         {
             auto result = handleCreate(payload, schema,
                 [&](int id) { return ctx.db.createGroup(id); },
                 [&](int id) { ctx.db.deleteGroup(id); },
                 [&]() { return ctx.db.allocateGroupId(); });
-            if (result.at("count").get<size_t>() > 0)
+
+            if (result.at("count").get<std::size_t>() > 0)
             {
                 ctx.db.commit();
             }
             return result;
         }
-        if (action == "query")
+
+        if (actionLower == "query")
         {
             return handleQuery(payload, ctx.db.groups(), schema);
         }
-        if (action == "update")
+
+        if (actionLower == "update")
         {
-            auto result = handleUpdate(payload, schema, [&](int id) { return ctx.db.getGroup(id); });
+            auto result = handleUpdate(payload, schema,
+                [&](int id) { return ctx.db.getGroup(id); });
             ctx.db.commit();
             return result;
         }
-        if (action == "delete")
+
+        if (actionLower == "delete")
         {
-            auto result = handleDelete(payload, "group", [&](int id) { return ctx.db.deleteGroup(id); });
+            auto result = handleDelete(payload, "group",
+                [&](int id) { return ctx.db.deleteGroup(id); });
             ctx.db.commit();
             return result;
         }
-        throw ApiError(400, "Unsupported group action: " + actionRaw);
+
+        throw ApiError(400, std::format("Unsupported group action: {}", action));
     }
 
-    json handleEvent(const std::string& actionRaw,
+    // ============================================================
+    // Event 处理器
+    // ============================================================
+
+    json handleEvent(std::string_view action,
                      const json& payload,
                      RequestContext& ctx)
     {
-        auto action = toLowerCopy(actionRaw);
-        if (action == "create")
+        const auto actionLower = toLowerCopy(action);
+        if (actionLower == "create")
         {
             if (!payload.contains("id") || !payload.at("id").is_null())
             {
@@ -315,8 +362,9 @@ namespace ws
             {
                 throw ApiError(400, "event.val_prev and event.val_curr are required.");
             }
-            double prev = requireNumber(payload.at("val_prev"), "val_prev");
-            double curr = requireNumber(payload.at("val_curr"), "val_curr");
+
+            const double prev = requireNumber(payload.at("val_prev"), "val_prev");
+            const double curr = requireNumber(payload.at("val_curr"), "val_curr");
 
             SSDB::Event evt;
             evt.SetId(SSDB::INVALID_ID);
@@ -325,14 +373,17 @@ namespace ws
             evt.SetReason(payload.at("desc").get<std::string>());
             evt.SetDeltaScore(static_cast<int>(std::llround(curr - prev)));
 
-            auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(evt.GetEventTime().time_since_epoch()).count();
+            const auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                evt.GetEventTime().time_since_epoch()).count();
 
             std::scoped_lock lock(ctx.mutex);
             int id = ctx.db.addEvent(evt);
             ctx.db.commit();
+
             return json{{"id", id}, {"timestamp", timestamp}};
         }
-        if (action == "update")
+
+        if (actionLower == "update")
         {
             if (!payload.contains("id") || !payload.at("id").is_number_integer())
             {
@@ -342,17 +393,26 @@ namespace ws
             {
                 throw ApiError(400, "event.erased must be boolean.");
             }
+
             std::scoped_lock lock(ctx.mutex);
             int id = payload.at("id").get<int>();
             ctx.db.setEventErased(id, payload.at("erased").get<bool>());
             ctx.db.commit();
+
             return json{{"id", id}, {"erased", payload.at("erased").get<bool>()}};
         }
-        throw ApiError(400, "Unsupported event action: " + actionRaw);
+
+        throw ApiError(400, std::format("Unsupported event action: {}", action));
     }
 
-    // 辅助函数：将 Permission 转换为 JSON 字符串
-    std::string permissionToJsonString(SSDB::Permission perm)
+    // ============================================================
+    // User 辅助函数
+    // ============================================================
+
+    /**
+     * @brief 将 Permission 转换为 JSON 字符串
+     */
+    [[nodiscard]] std::string permissionToJsonString(SSDB::Permission perm)
     {
         using SSDB::Permission;
         if (perm == Permission::ROOT) return "root";
@@ -376,8 +436,10 @@ namespace ws
         return result.empty() ? "none" : result;
     }
 
-    // 辅助函数：从 JSON 字符串解析 Permission
-    SSDB::Permission parsePermissionFromJson(const json& val)
+    /**
+     * @brief 从 JSON 解析 Permission
+     */
+    [[nodiscard]] SSDB::Permission parsePermissionFromJson(const json& val)
     {
         using SSDB::Permission;
 
@@ -420,15 +482,19 @@ namespace ws
         throw ApiError(422, "permission must be a string or array of strings.");
     }
 
-    json handleUser(const std::string& actionRaw,
+    // ============================================================
+    // User 处理器
+    // ============================================================
+
+    json handleUser(std::string_view action,
                     const json& payload,
                     RequestContext& ctx)
     {
-        auto action = toLowerCopy(actionRaw);
+        const auto actionLower = toLowerCopy(action);
         auto& userMgr = ctx.db.userManager();
 
         // 登录操作
-        if (action == "login")
+        if (actionLower == "login")
         {
             if (!payload.contains("username") || !payload.at("username").is_string())
             {
@@ -465,14 +531,14 @@ namespace ws
         }
 
         // 登出操作
-        if (action == "logout")
+        if (actionLower == "logout")
         {
             ctx.logout();
             return json{{"success", true}};
         }
 
         // 获取当前用户信息
-        if (action == "current")
+        if (actionLower == "current")
         {
             if (!ctx.isLoggedIn())
             {
@@ -518,7 +584,7 @@ namespace ws
         bool isRoot = SSDB::hasPermission(currentUser.GetPermission(), SSDB::Permission::ROOT);
 
         // 创建用户（需要 root 权限）
-        if (action == "create")
+        if (actionLower == "create")
         {
             if (!isRoot)
             {
@@ -570,7 +636,7 @@ namespace ws
         }
 
         // 删除用户（需要 root 权限）
-        if (action == "delete")
+        if (actionLower == "delete")
         {
             if (!isRoot)
             {
@@ -626,7 +692,7 @@ namespace ws
         }
 
         // 更新用户（修改权限、密码、状态）
-        if (action == "update")
+        if (actionLower == "update")
         {
             if (!payload.contains("id") || !payload.at("id").is_number_integer())
             {
@@ -703,7 +769,7 @@ namespace ws
         }
 
         // 查询用户列表
-        if (action == "query" || action == "list")
+        if (actionLower == "query" || actionLower == "list")
         {
 
             json users = json::array();
@@ -719,6 +785,7 @@ namespace ws
             return json{{"users", users}};
         }
 
-        throw ApiError(400, "Unsupported user action: " + actionRaw);
+        throw ApiError(400, std::format("Unsupported user action: {}", action));
     }
- }
+
+} // namespace ws
