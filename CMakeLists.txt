@@ -108,48 +108,6 @@ target_link_libraries(SecScoreDB PUBLIC
     cereal::cereal
 )
 
-# ============================================================
-# 旧式集成测试（暂时保留，后续可移除）
-# ============================================================
-file(GLOB LEGACY_TEST_SOURCES CONFIGURE_DEPENDS
-    ${PROJECT_SOURCE_DIR}/tests/*.cpp
-)
-
-# 排除将被单独处理的文件
-list(FILTER LEGACY_TEST_SOURCES EXCLUDE REGEX ".*websocket_client_test\\.cpp$")
-
-if(LEGACY_TEST_SOURCES)
-    add_executable(SecScoreDBTest ${LEGACY_TEST_SOURCES})
-    target_link_libraries(SecScoreDBTest PRIVATE SecScoreDB)
-    target_include_directories(SecScoreDBTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
-
-    # 注册到 CTest
-    add_test(NAME LegacyIntegrationTest COMMAND SecScoreDBTest)
-endif()
-
-# ============================================================
-# WebSocket 客户端测试
-# ============================================================
-# 用于测试 SecScoreDB-Websockets 服务端功能
-# 使用方法：
-#   1. 先启动服务端：./SecScoreDB-Websockets --port 8765 --db ./testdata_ws
-#   2. 再运行测试：./SecScoreDBWebsocketTest
-if(EXISTS "${PROJECT_SOURCE_DIR}/tests/websocket_client_test.cpp")
-    add_executable(SecScoreDBWebsocketTest
-        tests/websocket_client_test.cpp
-    )
-    target_link_libraries(SecScoreDBWebsocketTest PRIVATE
-        SecScoreDB
-        ixwebsocket::ixwebsocket
-    )
-    # Windows: mbedtls 依赖 bcrypt
-    if(WIN32)
-        target_link_libraries(SecScoreDBWebsocketTest PRIVATE bcrypt)
-    endif()
-    target_include_directories(SecScoreDBWebsocketTest PRIVATE
-        ${PROJECT_SOURCE_DIR}/src
-    )
-endif()
 
 # ============================================================
 # WebSocket 服务端 Wrapper
@@ -184,16 +142,30 @@ file(GLOB_RECURSE UNIT_TEST_SOURCES CONFIGURE_DEPENDS
 )
 
 if(UNIT_TEST_SOURCES)
-    add_executable(SecScoreDB_UnitTests ${UNIT_TEST_SOURCES})
+    # 添加 WebSocket 模块源文件用于测试
+    add_executable(SecScoreDB_UnitTests
+        ${UNIT_TEST_SOURCES}
+        wrappers/websockets/Protocol.cpp
+        wrappers/websockets/Handlers.cpp
+        wrappers/websockets/JsonUtils.cpp
+        wrappers/websockets/Errors.cpp
+    )
 
     target_link_libraries(SecScoreDB_UnitTests PRIVATE
         SecScoreDB
         GTest::gtest
         GTest::gtest_main
+        ixwebsocket::ixwebsocket
     )
+
+    # Windows: mbedtls 依赖 bcrypt
+    if(WIN32)
+        target_link_libraries(SecScoreDB_UnitTests PRIVATE bcrypt)
+    endif()
 
     target_include_directories(SecScoreDB_UnitTests PRIVATE
         ${PROJECT_SOURCE_DIR}/src
+        ${PROJECT_SOURCE_DIR}/wrappers/websockets
     )
 
     # 注册到 CTest
