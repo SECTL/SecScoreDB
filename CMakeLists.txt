@@ -90,6 +90,7 @@ find_package(GTest CONFIG REQUIRED)
 add_library(SecScoreDB STATIC
     src/FileHelper.cpp
     src/SecScoreDB.cpp
+    src/UserManager.cpp
 )
 
 # 设置库的 C++ 标准（确保传播给使用者）
