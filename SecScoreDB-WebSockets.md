@@ -39,12 +39,13 @@ cmake --build build/windows-debug
 ./build/windows-debug/SecScoreDB_E2ETests
 ```
 
-服务端遵循本协议，所有请求和响应均采用 JSON。若请求解析失败或未通过验证，服务端会返回 `status="error"`，并根据情况设置 `code`（如 400、401、403、422、500 等）。
+服务端遵循本协议，所有请求和响应均采用 JSON。若请求解析失败或未通过验证，服务端会返回 `status="error"`，并根据情况设置`code`
+（如 400、401、403、422、500 等）。
 
 > **协议版本**: 1.2  
 > **API 变更历史**:
 > - v1.2: 新增用户认证与权限管理 (`category: "user"`)，支持 `login`, `logout`, `create`, `delete`, `update`, `query` 操作
-> - v1.2: 新增权限类型: `read`, `write`, `delete`, `root`  
+> - v1.2: 新增权限类型: `read`, `write`, `delete`, `root`
 > - v1.2: 新增状态码 401 (未授权) 和 403 (权限不足)
 > - v1.1: 新增对字符串字段的模糊搜索支持 (`contains`, `starts_with`, `ends_with`)
 
@@ -66,38 +67,42 @@ cmake --build build/windows-debug
 
 ### 2.1 客户端请求 (Client Request)
 
-| 字段 | 类型 | 必填 | 说明 |
-| :--- | :--- | :--- | :--- |
-| **`seq`** | String | 是 | 请求唯一标识符 (如 UUID)。 |
-| **`category`** | String | 是 | 目标资源分类: `"system"`, `"student"`, `"group"`, `"event"`, `"user"`. |
-| **`action`** | String | 是 | 操作动作: `"define"`, `"create"`, `"query"`, `"update"`, `"delete"`, `"login"`, `"logout"`. |
-| **`payload`** | Object | 是 | 具体操作参数。 |
+| 字段             | 类型     | 必填 | 说明                                                                                      |
+|:---------------|:-------|:---|:----------------------------------------------------------------------------------------|
+| **`seq`**      | String | 是  | 请求唯一标识符 (如 UUID)。                                                                       |
+| **`category`** | String | 是  | 目标资源分类: `"system"`, `"student"`, `"group"`, `"event"`, `"user"`.                        |
+| **`action`**   | String | 是  | 操作动作: `"define"`, `"create"`, `"query"`, `"update"`, `"delete"`, `"login"`, `"logout"`. |
+| **`payload`**  | Object | 是  | 具体操作参数。                                                                                 |
 
 ```json
 {
-    "seq": "req-abc-123",
-    "category": "student",
-    "action": "query",
-    "payload": { ... }
+  "seq": "req-abc-123",
+  "category": "student",
+  "action": "query",
+  "payload": {
+    ...
+  }
 }
 ```
 
 ### 2.2 服务端响应 (Server Response)
 
-| 字段 | 类型 | 必填 | 说明 |
-| :--- | :--- | :--- | :--- |
-| **`seq`** | String | 是 | 原样回传请求的 `seq`。 |
-| **`status`** | String | 是 | `"ok"` 或 `"error"`。 |
-| **`code`** | Integer | 是 | 数字状态码 (详见第 6 节)。 |
-| **`message`** | String | 否 | 可读的状态或错误描述信息。 |
-| **`data`** | Object | 否 | 成功时的返回数据载荷。 |
+| 字段            | 类型      | 必填 | 说明                  |
+|:--------------|:--------|:---|:--------------------|
+| **`seq`**     | String  | 是  | 原样回传请求的 `seq`。      |
+| **`status`**  | String  | 是  | `"ok"` 或 `"error"`。 |
+| **`code`**    | Integer | 是  | 数字状态码 (详见第 6 节)。    |
+| **`message`** | String  | 否  | 可读的状态或错误描述信息。       |
+| **`data`**    | Object  | 否  | 成功时的返回数据载荷。         |
 
 ```json
 {
-    "seq": "req-abc-123",
-    "status": "ok",
-    "code": 200,
-    "data": { ... }
+  "seq": "req-abc-123",
+  "status": "ok",
+  "code": 200,
+  "data": {
+    ...
+  }
 }
 ```
 
@@ -107,45 +112,47 @@ cmake --build build/windows-debug
 
 ### 3.1 定义 Schema (Define)
 
-初始化实体的动态字段定义。
+初始化实体的动态字段定义。**此操作不需要登录**。
 
 * **Action**: `define`
+* **权限**: 无需登录
 * **Payload**:
-  * `target`: `"student"` 或 `"group"`
-  * `schema`: 字段名 -> 类型的映射表 (`"string"`, `"int"`, `"double"`).
+    * `target`: `"student"` 或 `"group"`
+    * `schema`: 字段名 -> 类型的映射表 (`"string"`, `"int"`, `"double"`).
 
 **请求示例:**
 
 ```json
 {
-    "category": "system",
-    "action": "define",
-    "payload": {
-        "target": "student",
-        "schema": {
-            "name": "string",
-            "age": "int",
-            "score": "double",
-            "class": "string"
-        }
+  "category": "system",
+  "action": "define",
+  "payload": {
+    "target": "student",
+    "schema": {
+      "name": "string",
+      "age": "int",
+      "score": "double",
+      "class": "string"
     }
+  }
 }
 ```
 
 ### 3.2 手动持久化 (Commit)
 
-* **Action**: `commit`
-* **Payload**: `{}`
+用于显式触发持久化（相当于 `db.commit()`），方便客户端在批量写入后立即刷盘。**此操作需要登录**。
 
-用于显式触发持久化（相当于 `db.commit()`），方便客户端在批量写入后立即刷盘。
+* **Action**: `commit`
+* **权限**: 需要登录
+* **Payload**: `{}`
 
 **请求示例**：
 
 ```json
 {
-    "category": "system",
-    "action": "commit",
-    "payload": {}
+  "category": "system",
+  "action": "commit",
+  "payload": {}
 }
 ```
 
@@ -153,15 +160,19 @@ cmake --build build/windows-debug
 
 ```json
 {
-    "status": "ok",
-    "code": 200,
-    "data": { "committed": true }
+  "status": "ok",
+  "code": 200,
+  "data": {
+    "committed": true
+  }
 }
 ```
 
 ---
 
 ## 4. 核心资源操作 (`category: "student" | "group"`)
+
+> **权限要求**: 本节所有操作均**需要登录**。未登录时会返回 `401 Unauthorized`。
 
 以下示例以 `student` 为例，`group` 同理。
 
@@ -171,32 +182,40 @@ cmake --build build/windows-debug
 
 * **Action**: `create`
 * **Payload**: `items` (数组)
-  * `index`: 客户端临时索引，用于追踪。
-  * `id`:
-    * `null`: 请求服务端**自动生成** ID。
-    * `Integer`: **强制使用**该 ID (通常用于数据导入/恢复)。
-  * `data`: 动态字段的数据字典。
+    * `index`: 客户端临时索引，用于追踪。
+    * `id`:
+        * `null`: 请求服务端**自动生成** ID。
+        * `Integer`: **强制使用**该 ID (通常用于数据导入/恢复)。
+    * `data`: 动态字段的数据字典。
 
 **请求示例:**
 
 ```json
 {
-    "category": "student",
-    "action": "create",
-    "payload": {
-        "items": [
-            {
-                "index": 0,
-                "id": null, 
-                "data": { "name": "Alice", "age": 18, "class": "A-1" }
-            },
-            {
-                "index": 1,
-                "id": 999,
-                "data": { "name": "Bob", "age": 20, "class": "B-2" }
-            }
-        ]
-    }
+  "category": "student",
+  "action": "create",
+  "payload": {
+    "items": [
+      {
+        "index": 0,
+        "id": null,
+        "data": {
+          "name": "Alice",
+          "age": 18,
+          "class": "A-1"
+        }
+      },
+      {
+        "index": 1,
+        "id": 999,
+        "data": {
+          "name": "Bob",
+          "age": 20,
+          "class": "B-2"
+        }
+      }
+    ]
+  }
 }
 ```
 
@@ -204,11 +223,21 @@ cmake --build build/windows-debug
 
 ```json
 {
-    "count": 2,
-    "results": [
-        { "index": 0, "success": true, "id": 1001 }, // 服务端分配的新 ID
-        { "index": 1, "success": true, "id": 999 }    // 确认使用的 ID
-    ]
+  "count": 2,
+  "results": [
+    {
+      "index": 0,
+      "success": true,
+      "id": 1001
+    },
+    // 服务端分配的新 ID
+    {
+      "index": 1,
+      "success": true,
+      "id": 999
+    }
+    // 确认使用的 ID
+  ]
 }
 ```
 
@@ -218,10 +247,10 @@ cmake --build build/windows-debug
 
 * **Action**: `query`
 * **Payload**:
-  * `logic`: 根逻辑节点。
-    * `op`: 逻辑运算符 (`"AND"`, `"OR"`).
-    * `rules`: 子规则或叶子条件数组。
-  * `limit`: (可选) 最大返回记录数。
+    * `logic`: 根逻辑节点。
+        * `op`: 逻辑运算符 (`"AND"`, `"OR"`).
+        * `rules`: 子规则或叶子条件数组。
+    * `limit`: (可选) 最大返回记录数。
 
 **叶子条件结构**:
 
@@ -231,35 +260,47 @@ cmake --build build/windows-debug
 
 **运算符对照表**:
 
-| 运算符 | 适用类型 | 说明 |
-| :--- | :--- | :--- |
-| `==`, `!=` | 所有类型 | 等于 / 不等于 |
-| `>`, `<`, `>=`, `<=` | Int, Double | 数值大小比较 |
-| **`contains`** | **String** | 字段包含该子串 |
-| **`starts_with`** | **String** | 字段以该值开头 |
-| **`ends_with`** | **String** | 字段以该值结尾 |
+| 运算符                  | 适用类型        | 说明       |
+|:---------------------|:------------|:---------|
+| `==`, `!=`           | 所有类型        | 等于 / 不等于 |
+| `>`, `<`, `>=`, `<=` | Int, Double | 数值大小比较   |
+| **`contains`**       | **String**  | 字段包含该子串  |
+| **`starts_with`**    | **String**  | 字段以该值开头  |
+| **`ends_with`**      | **String**  | 字段以该值结尾  |
 
 **请求示例:**
 
 ```json
 {
-    "category": "student",
-    "action": "query",
-    "payload": {
-        "logic": {
-            "op": "AND",
-            "rules": [
-                { "field": "age", "op": ">=", "val": 18 },
-                {
-                    "op": "OR",
-                    "rules": [
-                        { "field": "name", "op": "contains", "val": "Ali" },
-                        { "field": "class", "op": "starts_with", "val": "2024" }
-                    ]
-                }
-            ]
+  "category": "student",
+  "action": "query",
+  "payload": {
+    "logic": {
+      "op": "AND",
+      "rules": [
+        {
+          "field": "age",
+          "op": ">=",
+          "val": 18
+        },
+        {
+          "op": "OR",
+          "rules": [
+            {
+              "field": "name",
+              "op": "contains",
+              "val": "Ali"
+            },
+            {
+              "field": "class",
+              "op": "starts_with",
+              "val": "2024"
+            }
+          ]
         }
+      ]
     }
+  }
 }
 ```
 
@@ -267,12 +308,16 @@ cmake --build build/windows-debug
 
 ```json
 {
-    "items": [
-        {
-            "id": 1001,
-            "data": { "name": "Alice", "age": 18, "class": "2024-A-1" }
-        }
-    ]
+  "items": [
+    {
+      "id": 1001,
+      "data": {
+        "name": "Alice",
+        "age": 18,
+        "class": "2024-A-1"
+      }
+    }
+  ]
 }
 ```
 
@@ -282,22 +327,22 @@ cmake --build build/windows-debug
 
 * **Action**: `update`
 * **Payload**:
-  * `id`: 目标 ID。
-  * `set`: 需要更新的字段映射表。
+    * `id`: 目标 ID。
+    * `set`: 需要更新的字段映射表。
 
 **请求示例:**
 
 ```json
 {
-    "category": "student",
-    "action": "update",
-    "payload": {
-        "id": 1001,
-        "set": {
-            "score": 98.5,
-            "active": 1
-        }
+  "category": "student",
+  "action": "update",
+  "payload": {
+    "id": 1001,
+    "set": {
+      "score": 98.5,
+      "active": 1
     }
+  }
 }
 ```
 
@@ -312,9 +357,11 @@ cmake --build build/windows-debug
 
 ```json
 {
-    "category": "student",
-    "action": "delete",
-    "payload": { "id": 1001 }
+  "category": "student",
+  "action": "delete",
+  "payload": {
+    "id": 1001
+  }
 }
 ```
 
@@ -322,33 +369,35 @@ cmake --build build/windows-debug
 
 ## 5. 事件操作 (`category: "event"`)
 
+> **权限要求**: 本节所有操作均**需要登录**。未登录时会返回 `401 Unauthorized`。
+
 ### 5.1 创建事件 (Create Event)
 
 事件是追加型日志。`id` 必须为 `null` 以自动生成。
 
 * **Action**: `create`
 * **Payload**:
-  * `id`: `null` (必须)。
-  * `type`: `1` (Student) 或 `2` (Group)。
-  * `ref_id`: 关联对象的 ID。
-  * `desc`: 描述文本。
-  * `val_prev`: 变更前数值 (double)。
-  * `val_curr`: 变更后数值 (double)。
+    * `id`: `null` (必须)。
+    * `type`: `1` (Student) 或 `2` (Group)。
+    * `ref_id`: 关联对象的 ID。
+    * `desc`: 描述文本。
+    * `val_prev`: 变更前数值 (double)。
+    * `val_curr`: 变更后数值 (double)。
 
 **请求示例:**
 
 ```json
 {
-    "category": "event",
-    "action": "create",
-    "payload": {
-        "id": null,
-        "type": 1,
-        "ref_id": 1001,
-        "desc": "Bonus points",
-        "val_prev": 90.0,
-        "val_curr": 95.0
-    }
+  "category": "event",
+  "action": "create",
+  "payload": {
+    "id": null,
+    "type": 1,
+    "ref_id": 1001,
+    "desc": "Bonus points",
+    "val_prev": 90.0,
+    "val_curr": 95.0
+  }
 }
 ```
 
@@ -356,8 +405,8 @@ cmake --build build/windows-debug
 
 ```json
 {
-    "id": 5001,
-    "timestamp": 1710000000
+  "id": 5001,
+  "timestamp": 1710000000
 }
 ```
 
@@ -367,19 +416,19 @@ cmake --build build/windows-debug
 
 * **Action**: `update`
 * **Payload**:
-  * `id`: 事件 ID。
-  * `erased`: Boolean (`true` 表示隐藏)。
+    * `id`: 事件 ID。
+    * `erased`: Boolean (`true` 表示隐藏)。
 
 **请求示例:**
 
 ```json
 {
-    "category": "event",
-    "action": "update",
-    "payload": {
-        "id": 5001,
-        "erased": true
-    }
+  "category": "event",
+  "action": "update",
+  "payload": {
+    "id": 5001,
+    "erased": true
+  }
 }
 ```
 
@@ -393,20 +442,20 @@ cmake --build build/windows-debug
 
 * **Action**: `login`
 * **Payload**:
-  * `username`: 用户名 (String)
-  * `password`: 密码 (String)
+    * `username`: 用户名 (String)
+    * `password`: 密码 (String)
 
 **请求示例:**
 
 ```json
 {
-    "seq": "auth-001",
-    "category": "user",
-    "action": "login",
-    "payload": {
-        "username": "root",
-        "password": "root"
-    }
+  "seq": "auth-001",
+  "category": "user",
+  "action": "login",
+  "payload": {
+    "username": "root",
+    "password": "root"
+  }
 }
 ```
 
@@ -414,17 +463,17 @@ cmake --build build/windows-debug
 
 ```json
 {
-    "seq": "auth-001",
-    "status": "ok",
-    "code": 200,
-    "data": {
-        "success": true,
-        "user": {
-            "id": 1,
-            "username": "root",
-            "permission": "root"
-        }
+  "seq": "auth-001",
+  "status": "ok",
+  "code": 200,
+  "data": {
+    "success": true,
+    "user": {
+      "id": 1,
+      "username": "root",
+      "permission": "root"
     }
+  }
 }
 ```
 
@@ -432,10 +481,10 @@ cmake --build build/windows-debug
 
 ```json
 {
-    "seq": "auth-001",
-    "status": "error",
-    "code": 401,
-    "message": "Invalid username or password."
+  "seq": "auth-001",
+  "status": "error",
+  "code": 401,
+  "message": "Invalid username or password."
 }
 ```
 
@@ -450,9 +499,9 @@ cmake --build build/windows-debug
 
 ```json
 {
-    "category": "user",
-    "action": "logout",
-    "payload": {}
+  "category": "user",
+  "action": "logout",
+  "payload": {}
 }
 ```
 
@@ -467,13 +516,13 @@ cmake --build build/windows-debug
 
 ```json
 {
-    "logged_in": true,
-    "user": {
-        "id": 1,
-        "username": "admin",
-        "permission": "root",
-        "active": true
-    }
+  "logged_in": true,
+  "user": {
+    "id": 1,
+    "username": "admin",
+    "permission": "root",
+    "active": true
+  }
 }
 ```
 
@@ -481,7 +530,7 @@ cmake --build build/windows-debug
 
 ```json
 {
-    "logged_in": false
+  "logged_in": false
 }
 ```
 
@@ -491,33 +540,33 @@ cmake --build build/windows-debug
 
 * **Action**: `create`
 * **Payload**:
-  * `username`: 用户名 (String)
-  * `password`: 密码 (String)
-  * `permission`: 权限 (可选, String 或 Array)
+    * `username`: 用户名 (String)
+    * `password`: 密码 (String)
+    * `permission`: 权限 (可选, String 或 Array)
 
 **权限值说明:**
 
-| 值 | 说明 |
-| :--- | :--- |
-| `"none"` | 无权限 |
-| `"read"` | 只读权限 |
-| `"write"` | 写入权限 |
-| `"delete"` | 删除权限 |
-| `"root"` | 全部权限 (包括用户管理) |
-| `"read,write"` | 读写权限 (组合) |
-| `["read", "write"]` | 数组形式的权限组合 |
+| 值                   | 说明            |
+|:--------------------|:--------------|
+| `"none"`            | 无权限           |
+| `"read"`            | 只读权限          |
+| `"write"`           | 写入权限          |
+| `"delete"`          | 删除权限          |
+| `"root"`            | 全部权限 (包括用户管理) |
+| `"read,write"`      | 读写权限 (组合)     |
+| `["read", "write"]` | 数组形式的权限组合     |
 
 **请求示例:**
 
 ```json
 {
-    "category": "user",
-    "action": "create",
-    "payload": {
-        "username": "teacher1",
-        "password": "secure123",
-        "permission": "read,write"
-    }
+  "category": "user",
+  "action": "create",
+  "payload": {
+    "username": "teacher1",
+    "password": "secure123",
+    "permission": "read,write"
+  }
 }
 ```
 
@@ -525,12 +574,12 @@ cmake --build build/windows-debug
 
 ```json
 {
-    "success": true,
-    "user": {
-        "id": 2,
-        "username": "teacher1",
-        "permission": "read,write"
-    }
+  "success": true,
+  "user": {
+    "id": 2,
+    "username": "teacher1",
+    "permission": "read,write"
+  }
 }
 ```
 
@@ -540,16 +589,18 @@ cmake --build build/windows-debug
 
 * **Action**: `delete`
 * **Payload**:
-  * `id`: 用户 ID (Integer) **或**
-  * `username`: 用户名 (String)
+    * `id`: 用户 ID (Integer) **或**
+    * `username`: 用户名 (String)
 
 **请求示例:**
 
 ```json
 {
-    "category": "user",
-    "action": "delete",
-    "payload": { "username": "teacher1" }
+  "category": "user",
+  "action": "delete",
+  "payload": {
+    "username": "teacher1"
+  }
 }
 ```
 
@@ -559,22 +610,22 @@ cmake --build build/windows-debug
 
 * **Action**: `update`
 * **Payload**:
-  * `id`: 目标用户 ID (Integer, 必填)
-  * `permission`: 新权限 (可选)
-  * `new_password`: 新密码 (可选)
-  * `old_password`: 旧密码 (修改自己密码时需要)
-  * `active`: 激活状态 (可选, Boolean)
+    * `id`: 目标用户 ID (Integer, 必填)
+    * `permission`: 新权限 (可选)
+    * `new_password`: 新密码 (可选)
+    * `old_password`: 旧密码 (修改自己密码时需要)
+    * `active`: 激活状态 (可选, Boolean)
 
 **请求示例 (修改权限):**
 
 ```json
 {
-    "category": "user",
-    "action": "update",
-    "payload": {
-        "id": 2,
-        "permission": "root"
-    }
+  "category": "user",
+  "action": "update",
+  "payload": {
+    "id": 2,
+    "permission": "root"
+  }
 }
 ```
 
@@ -582,13 +633,13 @@ cmake --build build/windows-debug
 
 ```json
 {
-    "category": "user",
-    "action": "update",
-    "payload": {
-        "id": 2,
-        "new_password": "newSecurePass",
-        "old_password": "oldPassword"
-    }
+  "category": "user",
+  "action": "update",
+  "payload": {
+    "id": 2,
+    "new_password": "newSecurePass",
+    "old_password": "oldPassword"
+  }
 }
 ```
 
@@ -596,12 +647,12 @@ cmake --build build/windows-debug
 
 ```json
 {
-    "category": "user",
-    "action": "update",
-    "payload": {
-        "id": 2,
-        "active": false
-    }
+  "category": "user",
+  "action": "update",
+  "payload": {
+    "id": 2,
+    "active": false
+  }
 }
 ```
 
@@ -616,20 +667,20 @@ cmake --build build/windows-debug
 
 ```json
 {
-    "users": [
-        {
-            "id": 1,
-            "username": "root",
-            "permission": "root",
-            "active": true
-        },
-        {
-            "id": 2,
-            "username": "teacher1",
-            "permission": "read,write",
-            "active": true
-        }
-    ]
+  "users": [
+    {
+      "id": 1,
+      "username": "root",
+      "permission": "root",
+      "active": true
+    },
+    {
+      "id": 2,
+      "username": "teacher1",
+      "permission": "read,write",
+      "active": true
+    }
+  ]
 }
 ```
 
@@ -637,13 +688,13 @@ cmake --build build/windows-debug
 
 ## 7. 状态码定义 (Status Codes)
 
-| 代码 | 状态 | 说明 |
-| :--- | :--- | :--- |
-| **200** | OK | 请求处理成功。 |
-| **400** | Bad Request | JSON 格式错误、缺少必填字段或不支持的 Action。 |
-| **401** | Unauthorized | 未登录或登录凭据无效。 |
-| **403** | Forbidden | 权限不足，无法执行该操作。 |
-| **404** | Not Found | 目标资源 ID 不存在。 |
-| **409** | Conflict | 资源冲突 (如用户名已存在)。 |
-| **422** | Unprocessable | 逻辑错误 (如对 Int 字段使用 `contains`，或自动创建时 ID 不为 null)。 |
-| **500** | Internal Error | 服务端内部异常或存储失败。 |
+| 代码      | 状态             | 说明                                               |
+|:--------|:---------------|:-------------------------------------------------|
+| **200** | OK             | 请求处理成功。                                          |
+| **400** | Bad Request    | JSON 格式错误、缺少必填字段或不支持的 Action。                    |
+| **401** | Unauthorized   | 未登录或登录凭据无效。                                      |
+| **403** | Forbidden      | 权限不足，无法执行该操作。                                    |
+| **404** | Not Found      | 目标资源 ID 不存在。                                     |
+| **409** | Conflict       | 资源冲突 (如用户名已存在)。                                  |
+| **422** | Unprocessable  | 逻辑错误 (如对 Int 字段使用 `contains`，或自动创建时 ID 不为 null)。 |
+| **500** | Internal Error | 服务端内部异常或存储失败。                                    |

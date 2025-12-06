@@ -606,15 +606,62 @@ TEST_F(WebSocketE2ETest, InvalidCategory)
     EXPECT_EQ(resp["code"], 400);
 }
 
-TEST_F(WebSocketE2ETest, MissingPayloadFields)
+TEST_F(WebSocketE2ETest, StudentCreateWithoutLogin)
 {
-    auto resp = client->sendRequest("student", "create", json::object());
+    // 未登录时尝试创建学生，应该被拒绝
+    defineStudentSchema();
+
+    json payload = {
+        {"items", json::array({
+            {{"index", 0}, {"id", nullptr}, {"data", {{"name", "Test"}, {"age", 20}, {"score", 80.0}}}}
+        })}
+    };
+
+    auto resp = client->sendRequest("student", "create", payload);
 
     EXPECT_EQ(resp["status"], "error");
+    EXPECT_EQ(resp["code"], 401);
+}
+
+TEST_F(WebSocketE2ETest, EventCreateWithoutLogin)
+{
+    // 未登录时尝试创建事件，应该被拒绝
+    json payload = {
+        {"id", nullptr},
+        {"type", 1},
+        {"ref_id", 1001},
+        {"desc", "Test"},
+        {"val_prev", 0},
+        {"val_curr", 10}
+    };
+
+    auto resp = client->sendRequest("event", "create", payload);
+
+    EXPECT_EQ(resp["status"], "error");
+    EXPECT_EQ(resp["code"], 401);
+}
+
+TEST_F(WebSocketE2ETest, CommitWithoutLogin)
+{
+    // 未登录时尝试 commit，应该被拒绝
+    auto resp = client->sendRequest("system", "commit", json::object());
+
+    EXPECT_EQ(resp["status"], "error");
+    EXPECT_EQ(resp["code"], 401);
+}
+
+TEST_F(WebSocketE2ETest, DefineSchemaWithoutLogin)
+{
+    // define 操作不需要登录，应该成功
+    auto resp = defineStudentSchema();
+
+    EXPECT_EQ(resp["status"], "ok");
+    EXPECT_EQ(resp["code"], 200);
 }
 
 TEST_F(WebSocketE2ETest, InvalidFieldType)
 {
+    login();  // 需要先登录
     defineStudentSchema();
 
     // 尝试用错误类型创建
@@ -707,6 +754,7 @@ TEST_F(WebSocketE2ETest, StringContainsQuery)
 
 TEST_F(WebSocketE2ETest, RapidRequests)
 {
+    login();  // 需要先登录
     defineStudentSchema();
 
     // 快速发送多个请求（使用 auto-allocate ID 避免冲突）
