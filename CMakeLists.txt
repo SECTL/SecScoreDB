@@ -1,99 +1,160 @@
-cmake_minimum_required(VERSION 3.26)  # VS 2026需要较新的CMake版本
-project(SecScoreDB)
+cmake_minimum_required(VERSION 3.28)
+project(SecScoreDB
+    VERSION 1.0.0
+    DESCRIPTION "SecScoreDB - A secure score database system"
+    LANGUAGES CXX
+)
 
-# 设置C++23标准 - VS 2026 Insiders完全支持
+# ============================================================
+# C++23 标准配置
+# ============================================================
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)  # 禁用编译器扩展，使用标准C++
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-if (MSVC)
-    add_compile_options(/utf-8)
-    add_compile_options(/wd4819) # 可选：如果转换后还报错，可以屏蔽这个特定警告
+# ============================================================
+# 编译器版本检查
+# ============================================================
+if(MSVC)
+    # MSVC v143+ (Visual Studio 2022 17.0+)
+    if(MSVC_VERSION LESS 1930)
+        message(FATAL_ERROR "MSVC v143+ (VS 2022) or later is required. Current: ${MSVC_VERSION}")
+    endif()
+    message(STATUS "Using MSVC ${MSVC_VERSION}")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # GCC 14+
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14.0)
+        message(FATAL_ERROR "GCC 14+ is required. Current: ${CMAKE_CXX_COMPILER_VERSION}")
+    endif()
+    message(STATUS "Using GCC ${CMAKE_CXX_COMPILER_VERSION}")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # Clang 17+
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 17.0)
+        message(FATAL_ERROR "Clang 17+ is required. Current: ${CMAKE_CXX_COMPILER_VERSION}")
+    endif()
+    message(STATUS "Using Clang ${CMAKE_CXX_COMPILER_VERSION}")
 endif()
 
+# ============================================================
+# 编译器警告和选项
+# ============================================================
+if(MSVC)
+    add_compile_options(
+        /utf-8          # UTF-8 源文件编码
+        /W4             # 高警告级别
+        /permissive-    # 严格标准一致性
+        /Zc:__cplusplus # 正确报告 __cplusplus 宏
+        /Zc:preprocessor # 使用符合标准的预处理器
+        /wd4819         # 代码页警告（跨平台源文件）
+    )
+    # Debug 模式下启用更多检查
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        add_compile_options(/RTC1 /GS)
+    endif()
+else()
+    # GCC/Clang 警告
+    add_compile_options(
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+        -Wnon-virtual-dtor
+        -Wold-style-cast
+        -Woverloaded-virtual
+    )
+    # Debug 模式下启用 sanitizers
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+        add_link_options(-fsanitize=address,undefined)
+    endif()
+endif()
+
+# ============================================================
+# 启用 CTest
+# ============================================================
+include(CTest)
+enable_testing()
+
+# ============================================================
 # 查找依赖包
+# ============================================================
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(cereal CONFIG REQUIRED)
 find_package(ixwebsocket CONFIG REQUIRED)
+find_package(GTest CONFIG REQUIRED)
 
-# 添加静态库 - 只包含源文件，不包含头文件
+# ============================================================
+# 核心静态库
+# ============================================================
 add_library(SecScoreDB STATIC
-        src/FileHelper.cpp
-        src/SecScoreDB.cpp
-        src/Schema.hpp
-        src/DynamicFields.hpp
+    src/FileHelper.cpp
+    src/SecScoreDB.cpp
 )
 
-# 设置包含目录 - 确保头文件可以被正确找到
-# PUBLIC 传播给链接该库的目标
-# INSTALL_INTERFACE 以后安装可用
+# 设置库的 C++ 标准（确保传播给使用者）
+target_compile_features(SecScoreDB PUBLIC cxx_std_23)
+
+# 设置包含目录
 target_include_directories(SecScoreDB PUBLIC
-        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
-        $<INSTALL_INTERFACE:include>
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
+    $<INSTALL_INTERFACE:include>
 )
 
-# 链接依赖库到我们的静态库
+# 链接依赖库
 target_link_libraries(SecScoreDB PUBLIC
-        nlohmann_json::nlohmann_json
-        cereal::cereal
+    nlohmann_json::nlohmann_json
+    cereal::cereal
 )
 
-# -------------------------------------------------------------
-# 测试/示例可执行文件: 自动收集 tests 目录下的所有 .cpp
-# -------------------------------------------------------------
-file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
-        ${PROJECT_SOURCE_DIR}/tests/*.cpp)
+# ============================================================
+# 旧式集成测试（暂时保留，后续迁移到 GoogleTest）
+# ============================================================
+file(GLOB_RECURSE LEGACY_TEST_SOURCES CONFIGURE_DEPENDS
+    ${PROJECT_SOURCE_DIR}/tests/*.cpp
+)
 
-# 排除 websocket_client_test.cpp，它会单独编译
-list(FILTER TEST_SOURCES EXCLUDE REGEX ".*websocket_client_test\\.cpp$")
+# 排除将被单独处理的文件
+list(FILTER LEGACY_TEST_SOURCES EXCLUDE REGEX ".*websocket_client_test\\.cpp$")
+list(FILTER LEGACY_TEST_SOURCES EXCLUDE REGEX ".*_test\\.cpp$")
 
-if (TEST_SOURCES)
-    add_executable(SecScoreDBTest ${TEST_SOURCES})
-    # 链接到我们刚刚的静态库
+if(LEGACY_TEST_SOURCES)
+    add_executable(SecScoreDBTest ${LEGACY_TEST_SOURCES})
     target_link_libraries(SecScoreDBTest PRIVATE SecScoreDB)
-    # 由于静态库已经 PUBLIC 暴露头文件，这里理论上不需要再次 include
-    # 但如果以后 tests 里需要直接访问 src 下的未公开部分，可加：
     target_include_directories(SecScoreDBTest PRIVATE ${PROJECT_SOURCE_DIR}/src)
+
+    # 注册到 CTest
+    add_test(NAME LegacyIntegrationTest COMMAND SecScoreDBTest)
 endif()
 
-# -------------------------------------------------------------
-# WebSocket 客户端测试程序
+# ============================================================
+# WebSocket 客户端测试
+# ============================================================
 # 用于测试 SecScoreDB-Websockets 服务端功能
 # 使用方法：
 #   1. 先启动服务端：./SecScoreDB-Websockets --port 8765 --db ./testdata_ws
 #   2. 再运行测试：./SecScoreDBWebsocketTest
-#
-# 注意: 如果遇到链接错误 (如 _RTC_CheckStackVars, memcpy 等未定义)，
-# 这通常是 vcpkg 库与当前编译器/运行时设置不兼容导致的。
-# 解决方法:
-#   1. 删除 cmake-build-* 目录和 vcpkg_installed 目录
-#   2. 重新运行 cmake 配置
-#   3. 确保 vcpkg triplet 匹配 (x64-windows 或 x64-windows-static)
-# -------------------------------------------------------------
-if (EXISTS "${PROJECT_SOURCE_DIR}/tests/websocket_client_test.cpp")
+if(EXISTS "${PROJECT_SOURCE_DIR}/tests/websocket_client_test.cpp")
     add_executable(SecScoreDBWebsocketTest
         tests/websocket_client_test.cpp
     )
     target_link_libraries(SecScoreDBWebsocketTest PRIVATE
         SecScoreDB
         ixwebsocket::ixwebsocket
-        bcrypt  # Windows: mbedtls 依赖
     )
+    # Windows: mbedtls 依赖 bcrypt
+    if(WIN32)
+        target_link_libraries(SecScoreDBWebsocketTest PRIVATE bcrypt)
+    endif()
     target_include_directories(SecScoreDBWebsocketTest PRIVATE
         ${PROJECT_SOURCE_DIR}/src
     )
 endif()
 
-# 如果需要链接到可执行文件，应该先定义可执行文件
-# 例如：
-# add_executable(main main.cpp)
-# target_link_libraries(main PRIVATE Secscoredb_cmake)
-
-# -------------------------------------------------------------
-# Wrappers / example executables
-# -------------------------------------------------------------
-# Add a WebSockets wrapper executable that links to our SecScoreDB static library
-if (EXISTS "${PROJECT_SOURCE_DIR}/wrappers/websockets/main.cpp")
+# ============================================================
+# WebSocket 服务端 Wrapper
+# ============================================================
+if(EXISTS "${PROJECT_SOURCE_DIR}/wrappers/websockets/main.cpp")
     add_executable(SecScoreDB-Websockets
         wrappers/websockets/main.cpp
         wrappers/websockets/Protocol.cpp
@@ -101,14 +162,33 @@ if (EXISTS "${PROJECT_SOURCE_DIR}/wrappers/websockets/main.cpp")
         wrappers/websockets/JsonUtils.cpp
         wrappers/websockets/Errors.cpp
     )
-    # Link against the library we defined earlier
-
-    target_link_libraries(SecScoreDB-Websockets PRIVATE SecScoreDB)
-    # mbedtls (mbedcrypto) may call BCryptGenRandom on Windows; link bcrypt.lib to resolve it
-    target_link_libraries(SecScoreDB-Websockets PRIVATE ixwebsocket::ixwebsocket bcrypt)
-    # Ensure the wrapper can find project headers and its own headers
+    target_link_libraries(SecScoreDB-Websockets PRIVATE
+        SecScoreDB
+        ixwebsocket::ixwebsocket
+    )
+    # Windows: mbedtls 依赖 bcrypt
+    if(WIN32)
+        target_link_libraries(SecScoreDB-Websockets PRIVATE bcrypt)
+    endif()
     target_include_directories(SecScoreDB-Websockets PRIVATE
         ${PROJECT_SOURCE_DIR}/src
         ${PROJECT_SOURCE_DIR}/wrappers/websockets
     )
 endif()
+
+# ============================================================
+# GoogleTest 单元测试框架（预留，后续添加测试文件）
+# ============================================================
+# 示例：添加新的 GoogleTest 测试
+# add_executable(SecScoreDB_UnitTests
+#     tests/unit/db_test.cpp
+#     tests/unit/permission_test.cpp
+# )
+# target_link_libraries(SecScoreDB_UnitTests PRIVATE
+#     SecScoreDB
+#     GTest::gtest
+#     GTest::gtest_main
+# )
+# include(GoogleTest)
+# gtest_discover_tests(SecScoreDB_UnitTests)
+
