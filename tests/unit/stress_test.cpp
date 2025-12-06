@@ -336,18 +336,35 @@ TEST_F(StressTest, BulkEventGeneration)
     std::uniform_int_distribution<int> deltaDist(-20, 20);
     std::uniform_int_distribution<int> typeDist(0, 1);
 
+    // 累计计时器
+    double totalEventCreationMs = 0.0;
+    double totalDbOperationMs = 0.0;
+
     {
-        MemoryTracker memTracker("Event generation");
-        Timer timer("Generate " + std::to_string(eventCount) + " events");
+        MemoryTracker memTracker("Event generation total");
+        Timer totalTimer("Total event processing");
 
         auto lastReportTime = std::chrono::steady_clock::now();
 
         for (int i = 0; i < eventCount; ++i)
         {
+            // === 计时：Event 对象构造 ===
+            auto createStart = std::chrono::high_resolution_clock::now();
+
             EventType type = typeDist(rng) == 0 ? EventType::Student : EventType::Group;
             Event evt(INVALID_ID, type, targetDist(rng),
                      "Event #" + std::to_string(i), 1, deltaDist(rng));
+
+            auto createEnd = std::chrono::high_resolution_clock::now();
+            totalEventCreationMs += std::chrono::duration<double, std::milli>(createEnd - createStart).count();
+
+            // === 计时：数据库插入操作 ===
+            auto dbStart = std::chrono::high_resolution_clock::now();
+
             db.addEvent(std::move(evt));
+
+            auto dbEnd = std::chrono::high_resolution_clock::now();
+            totalDbOperationMs += std::chrono::duration<double, std::milli>(dbEnd - dbStart).count();
 
             // 进度报告
             if ((i + 1) % progressInterval == 0)
@@ -366,6 +383,25 @@ TEST_F(StressTest, BulkEventGeneration)
             }
         }
     }
+
+    // === 详细时间分解报告 ===
+    std::cout << "\n  ┌─────────────────────────────────────────────────┐" << std::endl;
+    std::cout << "  │           TIME BREAKDOWN REPORT                 │" << std::endl;
+    std::cout << "  ├─────────────────────────────────────────────────┤" << std::endl;
+    std::cout << "  │  Event object creation:  " << std::setw(10) << std::fixed << std::setprecision(2)
+              << totalEventCreationMs << " ms       │" << std::endl;
+    std::cout << "  │  Database insert (addEvent): " << std::setw(10) << totalDbOperationMs << " ms   │" << std::endl;
+    std::cout << "  │  ─────────────────────────────────────────────  │" << std::endl;
+    std::cout << "  │  Total processing time:  " << std::setw(10) << (totalEventCreationMs + totalDbOperationMs) << " ms       │" << std::endl;
+    std::cout << "  │                                                 │" << std::endl;
+    std::cout << "  │  Avg per event creation: " << std::setw(10) << std::setprecision(6)
+              << (totalEventCreationMs / eventCount) << " ms       │" << std::endl;
+    std::cout << "  │  Avg per DB operation:   " << std::setw(10)
+              << (totalDbOperationMs / eventCount) << " ms       │" << std::endl;
+    std::cout << "  │                                                 │" << std::endl;
+    std::cout << "  │  DB ops throughput: " << std::setw(10) << std::setprecision(0)
+              << (eventCount / (totalDbOperationMs / 1000.0)) << " ops/sec     │" << std::endl;
+    std::cout << "  └─────────────────────────────────────────────────┘" << std::endl;
 
     auto allEvents = db.getEvents([](const Event&) { return true; });
     EXPECT_EQ(allEvents.size(), eventCount);
@@ -738,15 +774,22 @@ TEST_F(StressTest, FullScaleIntegrationTest)
     std::size_t groupEventCount = 0;
     std::size_t erasedEventCount = 0;
 
+    // 分离计时
+    double totalEventCreationMs = 0.0;
+    double totalDbInsertMs = 0.0;
+    double totalDbEraseMs = 0.0;
+
     {
         MemoryTracker memTracker("Event generation (5M)");
-        Timer timer("Generate 5 million events");
 
         auto phaseStartTime = std::chrono::steady_clock::now();
         auto lastReportTime = phaseStartTime;
 
         for (int i = 0; i < eventCount; ++i)
         {
+            // === 计时：Event 对象构造（包含随机数生成和字符串构造） ===
+            auto createStart = std::chrono::high_resolution_clock::now();
+
             bool isStudentEvent = typeDist(rng) < 70;
             int targetId = isStudentEvent ? studentIdDist(rng) : groupIdDist(rng);
             EventType type = isStudentEvent ? EventType::Student : EventType::Group;
@@ -755,7 +798,14 @@ TEST_F(StressTest, FullScaleIntegrationTest)
                      "Adjustment #" + std::to_string(i),
                      operatorDist(rng), deltaDist(rng));
 
+            auto createEnd = std::chrono::high_resolution_clock::now();
+            totalEventCreationMs += std::chrono::duration<double, std::milli>(createEnd - createStart).count();
+
+            // === 计时：数据库插入操作 ===
+            auto dbInsertStart = std::chrono::high_resolution_clock::now();
             int assignedId = db.addEvent(std::move(evt));
+            auto dbInsertEnd = std::chrono::high_resolution_clock::now();
+            totalDbInsertMs += std::chrono::duration<double, std::milli>(dbInsertEnd - dbInsertStart).count();
 
             if (isStudentEvent)
             {
@@ -769,7 +819,10 @@ TEST_F(StressTest, FullScaleIntegrationTest)
             // 每10条事件擦除1条（模拟撤销操作）
             if (i % 10 == 0)
             {
+                auto eraseStart = std::chrono::high_resolution_clock::now();
                 db.setEventErased(assignedId, true);
+                auto eraseEnd = std::chrono::high_resolution_clock::now();
+                totalDbEraseMs += std::chrono::duration<double, std::milli>(eraseEnd - eraseStart).count();
                 ++erasedEventCount;
             }
 
@@ -795,6 +848,41 @@ TEST_F(StressTest, FullScaleIntegrationTest)
                 lastReportTime = now;
             }
         }
+
+        auto phaseEndTime = std::chrono::steady_clock::now();
+        auto phaseTotalMs = std::chrono::duration<double, std::milli>(phaseEndTime - phaseStartTime).count();
+
+        // === 详细时间分解报告 ===
+        std::cout << "\n  ╔═══════════════════════════════════════════════════════════════╗" << std::endl;
+        std::cout << "  ║              PHASE 4 TIME BREAKDOWN                           ║" << std::endl;
+        std::cout << "  ╠═══════════════════════════════════════════════════════════════╣" << std::endl;
+        std::cout << "  ║  [Object Creation]                                            ║" << std::endl;
+        std::cout << "  ║    Event object construction:    " << std::setw(12) << std::fixed << std::setprecision(2)
+                  << totalEventCreationMs << " ms          ║" << std::endl;
+        std::cout << "  ║    (includes RNG + string alloc)                              ║" << std::endl;
+        std::cout << "  ║                                                               ║" << std::endl;
+        std::cout << "  ║  [Database Operations]                                        ║" << std::endl;
+        std::cout << "  ║    addEvent() calls:             " << std::setw(12)
+                  << totalDbInsertMs << " ms          ║" << std::endl;
+        std::cout << "  ║    setEventErased() calls:       " << std::setw(12)
+                  << totalDbEraseMs << " ms          ║" << std::endl;
+        std::cout << "  ║    Total DB operations:          " << std::setw(12)
+                  << (totalDbInsertMs + totalDbEraseMs) << " ms          ║" << std::endl;
+        std::cout << "  ║                                                               ║" << std::endl;
+        std::cout << "  ║  [Summary]                                                    ║" << std::endl;
+        std::cout << "  ║    Phase total (wall clock):     " << std::setw(12)
+                  << phaseTotalMs << " ms          ║" << std::endl;
+        std::cout << "  ║    Overhead (loop, reporting):   " << std::setw(12)
+                  << (phaseTotalMs - totalEventCreationMs - totalDbInsertMs - totalDbEraseMs) << " ms          ║" << std::endl;
+        std::cout << "  ║                                                               ║" << std::endl;
+        std::cout << "  ║  [Performance Metrics]                                        ║" << std::endl;
+        std::cout << "  ║    Avg event creation:           " << std::setw(12) << std::setprecision(6)
+                  << (totalEventCreationMs / eventCount * 1000) << " µs          ║" << std::endl;
+        std::cout << "  ║    Avg DB insert:                " << std::setw(12)
+                  << (totalDbInsertMs / eventCount * 1000) << " µs          ║" << std::endl;
+        std::cout << "  ║    DB insert throughput:         " << std::setw(12) << std::setprecision(0)
+                  << (eventCount / (totalDbInsertMs / 1000.0)) << " ops/sec     ║" << std::endl;
+        std::cout << "  ╚═══════════════════════════════════════════════════════════════╝" << std::endl;
     }
 
     std::cout << "\n  Event statistics:" << std::endl;
