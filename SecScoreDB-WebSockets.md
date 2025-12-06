@@ -6,18 +6,43 @@
 
 - `--port <number>`：监听的 WebSocket 端口，默认 `8765`。
 - `--db <path>`：数据库根目录，默认当前工作目录下的 `data` 目录。
+- `--help` 或 `-h`：显示帮助信息。
 
 示例：
 
 ```powershell
-cmake --build . --target SecScoreDB-Websockets
-./SecScoreDB-Websockets --port 9000 --db ./data
+# 构建
+cmake --preset windows-debug
+cmake --build build/windows-debug
+
+# 启动服务器
+./build/windows-debug/SecScoreDB-Websockets --port 8765 --db ./data
+```
+
+## 测试说明
+
+项目提供两种测试方式：
+
+### 单元测试（不需要服务器）
+
+```powershell
+./build/windows-debug/SecScoreDB_UnitTests
+```
+
+### 端到端测试（需要服务器运行）
+
+```powershell
+# 终端 1：启动服务器
+./build/windows-debug/SecScoreDB-Websockets --port 8765 --db ./testdata_e2e
+
+# 终端 2：运行 E2E 测试
+./build/windows-debug/SecScoreDB_E2ETests
 ```
 
 服务端遵循本协议，所有请求和响应均采用 JSON。若请求解析失败或未通过验证，服务端会返回 `status="error"`，并根据情况设置 `code`（如 400、401、403、422、500 等）。
 
-> **版本**: 1.2  
-> **变更**:
+> **协议版本**: 1.2  
+> **API 变更历史**:
 > - v1.2: 新增用户认证与权限管理 (`category: "user"`)，支持 `login`, `logout`, `create`, `delete`, `update`, `query` 操作
 > - v1.2: 新增权限类型: `read`, `write`, `delete`, `root`  
 > - v1.2: 新增状态码 401 (未授权) 和 403 (权限不足)
