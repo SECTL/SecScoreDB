@@ -96,4 +96,3 @@ TEST_F(SchemaTest, ConstexprFieldTypeToString)
     constexpr std::string_view intStr = fieldTypeToString(FieldType::Int);
     EXPECT_EQ(intStr, "Int");
 }
-ng

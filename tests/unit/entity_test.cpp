@@ -231,4 +231,3 @@ TEST_F(EventTest, InvalidIdConstant)
     constexpr int invalidId = INVALID_ID;
     EXPECT_EQ(invalidId, -1);
 }
-an
