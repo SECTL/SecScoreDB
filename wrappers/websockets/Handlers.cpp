@@ -240,6 +240,12 @@ namespace ws
                        const json& payload,
                        RequestContext& ctx)
     {
+        // 所有学生操作都需要登录
+        if (!ctx.isLoggedIn())
+        {
+            throw ApiError(401, "Login required.");
+        }
+
         std::scoped_lock lock(ctx.mutex);
         const auto& schema = ctx.db.studentSchema();
         const auto actionLower = toLowerCopy(action);
@@ -289,6 +295,12 @@ namespace ws
                      const json& payload,
                      RequestContext& ctx)
     {
+        // 所有分组操作都需要登录
+        if (!ctx.isLoggedIn())
+        {
+            throw ApiError(401, "Login required.");
+        }
+
         std::scoped_lock lock(ctx.mutex);
         const auto& schema = ctx.db.groupSchema();
         const auto actionLower = toLowerCopy(action);
@@ -339,6 +351,12 @@ namespace ws
                      const json& payload,
                      RequestContext& ctx)
     {
+        // 所有事件操作都需要登录
+        if (!ctx.isLoggedIn())
+        {
+            throw ApiError(401, "Login required.");
+        }
+
         const auto actionLower = toLowerCopy(action);
         if (actionLower == "create")
         {
