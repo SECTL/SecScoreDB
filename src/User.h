@@ -1,52 +1,68 @@
+/**
+ * @file User.h
+ * @brief 用户实体定义
+ */
 #pragma once
+
+#include "Permission.h"
+
+#include <cstdint>
 #include <string>
+#include <utility>
+
+// Cereal 序列化
 #include <cereal/cereal.hpp>
 #include <cereal/types/string.hpp>
-#include "Permission.h"
 
 namespace SSDB
 {
     /**
-     * @brief 用户类
+     * @brief 用户实体类
      *
-     * 每个用户有唯一的 id 和 username，以及对应的权限。
+     * 每个用户有唯一的 ID 和用户名，以及对应的权限。
      * 支持密码验证（存储密码哈希）。
      */
     class User
     {
     private:
-        int id;
-        std::string username;
-        std::string passwordHash;  // 存储密码哈希，不存明文
-        Permission permission;
-        bool active;               // 用户是否激活
+        int id_ = 0;
+        std::string username_;
+        std::string passwordHash_;
+        Permission permission_ = Permission::NONE;
+        bool active_ = true;
 
     public:
-        // 默认构造函数（cereal 反序列化需要）
-        User() : id(0), permission(Permission::NONE), active(true) {}
+        // 默认构造函数（Cereal 反序列化需要）
+        User() = default;
 
-        // 构造函数
-        User(int _id, const std::string& _username, const std::string& _passwordHash, Permission _perm = Permission::READ)
-            : id(_id), username(_username), passwordHash(_passwordHash), permission(_perm), active(true) {}
+        // 带参构造函数
+        User(int id, std::string username, std::string passwordHash, Permission perm = Permission::READ)
+            : id_(id)
+            , username_(std::move(username))
+            , passwordHash_(std::move(passwordHash))
+            , permission_(perm)
+            , active_(true)
+        {
+        }
 
         // ============================================================
-        // Getter / Setter
+        // Getters / Setters
         // ============================================================
 
-        int GetId() const { return id; }
-        void SetId(int _id) { id = _id; }
+        [[nodiscard]] int GetId() const noexcept { return id_; }
+        void SetId(int id) noexcept { id_ = id; }
 
-        const std::string& GetUsername() const { return username; }
-        void SetUsername(const std::string& _username) { username = _username; }
+        [[nodiscard]] const std::string& GetUsername() const noexcept { return username_; }
+        void SetUsername(std::string username) { username_ = std::move(username); }
 
-        const std::string& GetPasswordHash() const { return passwordHash; }
-        void SetPasswordHash(const std::string& hash) { passwordHash = hash; }
+        [[nodiscard]] const std::string& GetPasswordHash() const noexcept { return passwordHash_; }
+        void SetPasswordHash(std::string hash) { passwordHash_ = std::move(hash); }
 
-        Permission GetPermission() const { return permission; }
-        void SetPermission(Permission perm) { permission = perm; }
+        [[nodiscard]] Permission GetPermission() const noexcept { return permission_; }
+        void SetPermission(Permission perm) noexcept { permission_ = perm; }
 
-        bool IsActive() const { return active; }
-        void SetActive(bool _active) { active = _active; }
+        [[nodiscard]] bool IsActive() const noexcept { return active_; }
+        void SetActive(bool active) noexcept { active_ = active; }
 
         // ============================================================
         // 权限检查方法
@@ -55,23 +71,23 @@ namespace SSDB
         /**
          * @brief 检查用户是否拥有指定权限
          */
-        bool hasPermission(Permission required) const
+        [[nodiscard]] bool hasPermission(Permission required) const noexcept
         {
-            return SSDB::hasPermission(permission, required);
+            return SSDB::hasPermission(permission_, required);
         }
 
         /**
          * @brief 检查是否为 root 用户
          */
-        bool isRoot() const
+        [[nodiscard]] bool isRoot() const noexcept
         {
-            return permission == Permission::ROOT;
+            return permission_ == Permission::ROOT;
         }
 
         /**
          * @brief 检查是否可读
          */
-        bool canRead() const
+        [[nodiscard]] bool canRead() const noexcept
         {
             return hasPermission(Permission::READ);
         }
@@ -79,7 +95,7 @@ namespace SSDB
         /**
          * @brief 检查是否可写
          */
-        bool canWrite() const
+        [[nodiscard]] bool canWrite() const noexcept
         {
             return hasPermission(Permission::WRITE);
         }
@@ -87,7 +103,7 @@ namespace SSDB
         /**
          * @brief 检查是否可删除
          */
-        bool canDelete() const
+        [[nodiscard]] bool canDelete() const noexcept
         {
             return hasPermission(Permission::DELETE);
         }
@@ -99,32 +115,32 @@ namespace SSDB
         /**
          * @brief 添加权限
          */
-        void addPermission(Permission perm)
+        void addPermission(Permission perm) noexcept
         {
-            permission = SSDB::addPermission(permission, perm);
+            permission_ = SSDB::addPermission(permission_, perm);
         }
 
         /**
          * @brief 移除权限
          */
-        void removePermission(Permission perm)
+        void removePermission(Permission perm) noexcept
         {
-            permission = SSDB::removePermission(permission, perm);
+            permission_ = SSDB::removePermission(permission_, perm);
         }
 
         // ============================================================
-        // cereal 序列化
+        // Cereal 序列化
         // ============================================================
 
         template <class Archive>
         void serialize(Archive& ar)
         {
             ar(
-                CEREAL_NVP(id),
-                CEREAL_NVP(username),
-                CEREAL_NVP(passwordHash),
-                cereal::make_nvp("permission", reinterpret_cast<uint8_t&>(permission)),
-                CEREAL_NVP(active)
+                cereal::make_nvp("id", id_),
+                cereal::make_nvp("username", username_),
+                cereal::make_nvp("passwordHash", passwordHash_),
+                cereal::make_nvp("permission", reinterpret_cast<std::uint8_t&>(permission_)),
+                cereal::make_nvp("active", active_)
             );
         }
     };
