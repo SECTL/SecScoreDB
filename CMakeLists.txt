@@ -108,15 +108,14 @@ target_link_libraries(SecScoreDB PUBLIC
 )
 
 # ============================================================
-# 旧式集成测试（暂时保留，后续迁移到 GoogleTest）
+# 旧式集成测试（暂时保留，后续可移除）
 # ============================================================
-file(GLOB_RECURSE LEGACY_TEST_SOURCES CONFIGURE_DEPENDS
+file(GLOB LEGACY_TEST_SOURCES CONFIGURE_DEPENDS
     ${PROJECT_SOURCE_DIR}/tests/*.cpp
 )
 
 # 排除将被单独处理的文件
 list(FILTER LEGACY_TEST_SOURCES EXCLUDE REGEX ".*websocket_client_test\\.cpp$")
-list(FILTER LEGACY_TEST_SOURCES EXCLUDE REGEX ".*_test\\.cpp$")
 
 if(LEGACY_TEST_SOURCES)
     add_executable(SecScoreDBTest ${LEGACY_TEST_SOURCES})
@@ -177,18 +176,31 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/wrappers/websockets/main.cpp")
 endif()
 
 # ============================================================
-# GoogleTest 单元测试框架（预留，后续添加测试文件）
+# GoogleTest 单元测试
 # ============================================================
-# 示例：添加新的 GoogleTest 测试
-# add_executable(SecScoreDB_UnitTests
-#     tests/unit/db_test.cpp
-#     tests/unit/permission_test.cpp
-# )
-# target_link_libraries(SecScoreDB_UnitTests PRIVATE
-#     SecScoreDB
-#     GTest::gtest
-#     GTest::gtest_main
-# )
-# include(GoogleTest)
-# gtest_discover_tests(SecScoreDB_UnitTests)
+file(GLOB_RECURSE UNIT_TEST_SOURCES CONFIGURE_DEPENDS
+    ${PROJECT_SOURCE_DIR}/tests/unit/*.cpp
+)
+
+if(UNIT_TEST_SOURCES)
+    add_executable(SecScoreDB_UnitTests ${UNIT_TEST_SOURCES})
+
+    target_link_libraries(SecScoreDB_UnitTests PRIVATE
+        SecScoreDB
+        GTest::gtest
+        GTest::gtest_main
+    )
+
+    target_include_directories(SecScoreDB_UnitTests PRIVATE
+        ${PROJECT_SOURCE_DIR}/src
+    )
+
+    # 注册到 CTest
+    include(GoogleTest)
+    gtest_discover_tests(SecScoreDB_UnitTests
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        PROPERTIES
+            LABELS "unit"
+    )
+endif()
 
