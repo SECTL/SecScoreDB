@@ -4,9 +4,11 @@
 #include "Student.h"
 #include "Event.h"
 #include "Group.h"
+#include "UserManager.h"
 #include <unordered_map>
 #include <filesystem>
 #include <deque>
+#include <memory>
 
 #include "DynamicFields.hpp"
 #include <functional>
@@ -22,6 +24,10 @@ namespace SSDB
         std::unordered_map<int, Student> stu;
         std::unordered_map<int, Event> evt;
         std::unordered_map<int, Group> grp;
+
+        // 用户管理器
+        std::unique_ptr<UserManager> _userManager;
+        std::filesystem::path _dbPath;
 
         //schema
         SchemaDef _stu_schema;
@@ -47,6 +53,56 @@ namespace SSDB
     public:
         explicit SecScoreDB(const std::filesystem::path& path);
         ~SecScoreDB();
+
+        // ============================================================
+        // 用户管理与权限
+        // ============================================================
+
+        /**
+         * @brief 获取用户管理器
+         */
+        UserManager& userManager() { return *_userManager; }
+        const UserManager& userManager() const { return *_userManager; }
+
+        /**
+         * @brief 用户登录
+         */
+        bool login(const std::string& username, const std::string& password)
+        {
+            return _userManager->login(username, password);
+        }
+
+        /**
+         * @brief 用户登出
+         */
+        void logout()
+        {
+            _userManager->logout();
+        }
+
+        /**
+         * @brief 检查是否已登录
+         */
+        bool isLoggedIn() const
+        {
+            return _userManager->isLoggedIn();
+        }
+
+        /**
+         * @brief 检查当前用户是否有指定权限
+         */
+        bool checkPermission(Permission perm) const
+        {
+            return _userManager->checkPermission(perm);
+        }
+
+        /**
+         * @brief 要求权限，没有则抛出异常
+         */
+        void requirePermission(Permission perm, const std::string& operation = "this operation") const
+        {
+            _userManager->requirePermission(perm, operation);
+        }
 
         // init schema for grp & stu
 

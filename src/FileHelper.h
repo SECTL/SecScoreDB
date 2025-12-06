@@ -1,27 +1,35 @@
+/**
+ * @file FileHelper.h
+ * @brief 数据库文件操作辅助类
+ */
 #pragma once
-#include <fstream>
-#include <filesystem>
-#include <unordered_map>
-#include <iostream>
+
 #include "SSDBType.h"
 
-// Cereal 头文件
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <unordered_map>
+
+// Cereal 序列化
 #include <cereal/archives/binary.hpp>
-#include <cereal/types/string.hpp>
-#include <cereal/types/vector.hpp>
 #include <cereal/types/map.hpp>
-// 这一行很重要，支持 unordered_map 的直接序列化
+#include <cereal/types/string.hpp>
 #include <cereal/types/unordered_map.hpp>
+#include <cereal/types/vector.hpp>
 
 namespace SSDB
 {
-    namespace fs = std::filesystem;
-
+    /**
+     * @brief 数据库文件操作类
+     *
+     * 提供二进制文件的读写操作，使用 Cereal 进行序列化
+     */
     class DataBaseFile
     {
     private:
-        fs::path filePath;
-        std::fstream File;
+        fs::path filePath_;
+        std::fstream file_;
 
     public:
         explicit DataBaseFile(fs::path path);
@@ -31,72 +39,92 @@ namespace SSDB
         DataBaseFile(const DataBaseFile&) = delete;
         DataBaseFile& operator=(const DataBaseFile&) = delete;
 
-        // =======================================================
-        //  集成核心：全量加载与保存
-        // =======================================================
+        // 允许移动
+        DataBaseFile(DataBaseFile&&) noexcept = default;
+        DataBaseFile& operator=(DataBaseFile&&) noexcept = default;
 
-        // 启动时：读取整个文件到 Map 中
-        template<typename T>
-        std::unordered_map<int, T> LoadAll()
+        /**
+         * @brief 获取文件路径
+         */
+        [[nodiscard]] const fs::path& GetPath() const noexcept { return filePath_; }
+
+        /**
+         * @brief 从文件加载所有数据
+         * @tparam T 数据类型（需要支持 Cereal 序列化）
+         * @return 加载的数据映射表
+         */
+        template <typename T>
+        [[nodiscard]] std::unordered_map<int, T> LoadAll()
         {
             std::unordered_map<int, T> dataMap;
 
-            // 确保处于读模式且在文件头
-            if (!File.is_open()) return dataMap;
+            if (!file_.is_open())
+            {
+                return dataMap;
+            }
 
             // 检查文件是否为空
-            File.seekg(0, std::ios::end);
-                        if (File.tellg() == 0) {
-                File.seekg(0, std::ios::beg); // 保证指针回到文件头
-                return dataMap; // 空文件直接返回
+            file_.seekg(0, std::ios::end);
+            if (file_.tellg() == 0)
+            {
+                file_.seekg(0, std::ios::beg);
+                return dataMap;
             }
-            File.seekg(0, std::ios::beg);
+            file_.seekg(0, std::ios::beg);
 
-            try {
-                cereal::BinaryInputArchive archive(File);
-
-                // 策略 A：直接序列化整个 Map (最简单，推荐)
-                // Cereal 会自动处理 Map 的大小和结构
+            try
+            {
+                cereal::BinaryInputArchive archive(file_);
                 archive(dataMap);
-
-                // 策略 B (备选)：如果你是逐个对象存的，就需要循环读
-                // while(file_good) { T obj; archive(obj); dataMap[obj.GetId()] = std::move(obj); }
             }
-            catch (const std::exception& e) {
-                std::cerr << "[DB Load Error] " << filePath << ": " << e.what() << std::endl;
-                // 出错时返回已读取的部分或空 map，视策略而定
+            catch (const std::exception& e)
+            {
+                std::cerr << "[DB Load Error] " << filePath_ << ": " << e.what() << '\n';
             }
 
             return dataMap;
         }
 
-        // Commit时：将整个 Map 覆盖写入文件
-        template<typename T>
+        /**
+         * @brief 将所有数据保存到文件
+         * @tparam T 数据类型（需要支持 Cereal 序列化）
+         * @param dataMap 要保存的数据映射表
+         */
+        template <typename T>
         void SaveAll(const std::unordered_map<int, T>& dataMap)
         {
-            // 1. 关闭当前文件流
-            File.close();
+            // 关闭当前文件流
+            file_.close();
 
-            // 2. 以 Truncate (截断/清空) 模式重新打开
-            File.open(filePath, std::ios::out | std::ios::binary | std::ios::trunc);
-            if (!File.is_open()) {
-                throw std::runtime_error("Failed to open file for writing: " + filePath.string());
+            // 以截断模式重新打开
+            file_.open(filePath_, std::ios::out | std::ios::binary | std::ios::trunc);
+            if (!file_.is_open())
+            {
+                throw std::runtime_error("Failed to open file for writing: " + filePath_.string());
             }
 
-            // 3. 写入数据
-            try {
-                cereal::BinaryOutputArchive archive(File);
-                // 直接序列化整个 Map
+            // 写入数据
+            try
+            {
+                cereal::BinaryOutputArchive archive(file_);
                 archive(dataMap);
             }
-            catch (const std::exception& e) {
-                 std::cerr << "[DB Save Error] " << filePath << ": " << e.what() << std::endl;
+            catch (const std::exception& e)
+            {
+                std::cerr << "[DB Save Error] " << filePath_ << ": " << e.what() << '\n';
+                throw;
             }
 
-                       File.open(filePath, std::ios::in | std::ios::out | std::ios::binary);
-            if (!File.is_open()) {
-                throw std::runtime_error("Failed to reopen file in read-write mode: " + filePath.string());
-            }        File.open(filePath, std::ios::in | std::ios::out | std::ios::binary);
+            // 刷新并关闭
+            file_.flush();
+            file_.close();
+
+            // 重新以读写模式打开
+            file_.open(filePath_, std::ios::in | std::ios::out | std::ios::binary);
+            if (!file_.is_open())
+            {
+                throw std::runtime_error("Failed to reopen file in read-write mode: " + filePath_.string());
+            }
         }
     };
 }

@@ -1,7 +1,13 @@
 {
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "secscoredb",
+  "version": "1.2.0",
+  "description": "SecScoreDB - A secure score database system with WebSocket support",
+  "supports": "windows | linux",
   "dependencies": [
     "cereal",
     "nlohmann-json",
-    "ixwebsocket"
+    "ixwebsocket",
+    "gtest"
   ]
 }

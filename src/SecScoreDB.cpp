@@ -12,8 +12,12 @@ namespace SSDB
     SecScoreDB::SecScoreDB(const std::filesystem::path& path)
         : stu_db(path / "students.bin"), // 使用二进制后缀
           grp_db(path / "groups.bin"),
-          evt_db(path / "events.bin")
+          evt_db(path / "events.bin"),
+          _dbPath(path)
     {
+        // 初始化用户管理器
+        _userManager = std::make_unique<UserManager>(path);
+
         // 一行代码完成加载！
         stu = stu_db.LoadAll<Student>();
         grp = grp_db.LoadAll<Group>();
@@ -70,6 +74,12 @@ namespace SSDB
         stu_db.SaveAll(stu);
         grp_db.SaveAll(grp);
         evt_db.SaveAll(evt);
+
+        // 保存用户数据
+        if (_userManager)
+        {
+            _userManager->commit();
+        }
     }
 
     // ============================================================

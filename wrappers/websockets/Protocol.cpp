@@ -1,19 +1,27 @@
+/**
+ * @file Protocol.cpp
+ * @brief WebSocket 协议实现
+ */
 #include "Protocol.hpp"
 
 #include "Errors.hpp"
-#include "JsonUtils.hpp"
 #include "Handlers.hpp"
+#include "JsonUtils.hpp"
+
+#include <format>
+#include <string>
 
 using nlohmann::json;
 
 namespace ws
 {
-    json dispatch(const std::string& category,
-                  const std::string& action,
+    json dispatch(std::string_view category,
+                  std::string_view action,
                   const json& payload,
                   RequestContext& ctx)
     {
-        auto cat = toLowerCopy(category);
+        const auto cat = toLowerCopy(category);
+
         if (cat == "system")
         {
             return handleSystem(action, payload, ctx);
@@ -30,21 +38,38 @@ namespace ws
         {
             return handleEvent(action, payload, ctx);
         }
-        throw ApiError(400, "Unsupported category: " + category);
+        if (cat == "user")
+        {
+            return handleUser(action, payload, ctx);
+        }
+
+        throw ApiError(400, std::format("Unsupported category: {}", category));
     }
 
-    json makeOkResponse(const std::string& seq, const json& data)
+    json makeOkResponse(std::string_view seq, const json& data)
     {
-        json response{{"seq", seq}, {"status", "ok"}, {"code", 200}};
+        json response{
+            {"seq", std::string(seq)},
+            {"status", "ok"},
+            {"code", 200}
+        };
+
         if (!data.is_null())
         {
             response["data"] = data;
         }
+
         return response;
     }
 
-    json makeErrorResponse(const std::string& seq, int code, const std::string& message)
+    json makeErrorResponse(std::string_view seq, int code, std::string_view message)
     {
-        return json{{"seq", seq}, {"status", "error"}, {"code", code}, {"message", message}};
+        return json{
+            {"seq", std::string(seq)},
+            {"status", "error"},
+            {"code", code},
+            {"message", std::string(message)}
+        };
     }
-}
+
+} // namespace ws
