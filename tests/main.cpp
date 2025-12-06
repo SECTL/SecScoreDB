@@ -186,7 +186,7 @@ namespace
                                      ? "Student adjustment #" + std::to_string(i)
                                      : "Group adjustment #" + std::to_string(i);
             Event evt(INVALID_ID,
-                      studentEvent ? EventType::STUDENT : EventType::GROUP,
+                      studentEvent ? EventType::Student : EventType::Group,
                       targetId,
                       std::move(reason),
                       operatorDist(rng),

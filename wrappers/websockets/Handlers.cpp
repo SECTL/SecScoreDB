@@ -165,8 +165,8 @@ namespace ws
 
     SSDB::EventType parseEventType(int type)
     {
-        if (type == 1) return SSDB::EventType::STUDENT;
-        if (type == 2) return SSDB::EventType::GROUP;
+        if (type == 1) return SSDB::EventType::Student;
+        if (type == 2) return SSDB::EventType::Group;
         throw ApiError(422, "event.type must be 1 (student) or 2 (group).");
     }
 
